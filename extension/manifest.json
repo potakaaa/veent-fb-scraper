@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "FB Events Collector",
+  "version": "1.0.0",
+  "description": "Human-assisted public Facebook Events metadata collector for local research.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.facebook.com/events/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "FB Events Collector"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.facebook.com/events/*"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

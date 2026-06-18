@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FB Events — Review &amp; Export</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <span class="logo">&#128197;</span>
+      <h1>FB Events Review</h1>
+    </div>
+    <div class="header-right">
+      <button id="exportBtn" class="btn-primary">Export CSV</button>
+    </div>
+  </header>
+
+  <div class="filters">
+    <input id="filterTerm" type="text" placeholder="Filter by search term..." />
+    <input id="filterFrom" type="date" title="From date" />
+    <input id="filterTo"   type="date" title="To date" />
+    <button id="applyFilter" class="btn-secondary">Filter</button>
+    <button id="clearFilter" class="btn-ghost">Clear</button>
+    <span id="countLabel" class="count-label"></span>
+  </div>
+
+  <!-- Bulk action bar — shown only when rows are selected -->
+  <div id="bulkBar" class="bulk-bar hidden">
+    <span id="selectedCount" class="selected-count"></span>
+    <button id="deleteSelectedBtn" class="btn-danger">Delete Selected</button>
+    <button id="clearAllBtn" class="btn-danger-outline">Delete All Visible</button>
+    <button id="deselectBtn" class="btn-ghost">Deselect All</button>
+  </div>
+
+  <div id="tableWrap">
+    <table id="eventsTable">
+      <thead>
+        <tr>
+          <th class="col-check"><input type="checkbox" id="selectAll" title="Select all visible" /></th>
+          <th>Title</th>
+          <th>Date/Time</th>
+          <th>Venue</th>
+          <th>City</th>
+          <th>Organizer</th>
+          <th>Resp.</th>
+          <th>Search Term</th>
+          <th>Collected</th>
+          <th>Notes</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="eventsBody">
+        <tr><td colspan="11" class="empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

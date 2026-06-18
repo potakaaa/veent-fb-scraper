@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FB Events Collector</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="header">
+    <span class="logo">&#128197;</span>
+    <span class="title">FB Events Collector</span>
+  </div>
+
+  <div class="section">
+    <label for="searchTerm">Search term</label>
+    <div class="row">
+      <input id="searchTerm" type="text" placeholder="e.g. tech meetup Sydney" autocomplete="off" />
+      <button id="openSearch" title="Open Facebook Events search in new tab">Search</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <button id="extractBtn" class="primary" disabled>Extract Visible Events</button>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="section footer-links">
+    <a id="reviewLink" href="http://localhost:7842" target="_blank">Open Review UI &#8599;</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
