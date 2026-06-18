@@ -15,8 +15,9 @@ function getDb() {
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
     db.exec(SCHEMA);
-    // Non-destructive migration: add respondent_count if not yet present.
+    // Non-destructive migrations: add columns if not yet present.
     try { db.exec('ALTER TABLE events ADD COLUMN respondent_count INTEGER NOT NULL DEFAULT 0'); } catch {}
+    try { db.exec('ALTER TABLE events ADD COLUMN enriched_at TEXT'); } catch {}
   }
   return db;
 }
