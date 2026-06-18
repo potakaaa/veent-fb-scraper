@@ -45,7 +45,6 @@ async function enrichOne(eventUrl, searchTerm) {
     const patch  = {};
     if (detail.organizer_name) patch.organizer_name = detail.organizer_name;
     if (detail.city_location)  patch.city_location  = detail.city_location;
-    if (detail.venue_name)     patch.venue_name     = detail.venue_name;
     if (detail.start_datetime) patch.start_datetime = detail.start_datetime;
     if (!Object.keys(patch).length) return false;
 

@@ -5,7 +5,8 @@ const EVENT_PATH_RE  = /facebook\.com\/events\/(?!search|upcoming|calendar|explo
 const EVENT_ID_RE    = /\/events\/[^?#]*?(\d{8,})/;
 const DATE_WORD_RE   = /\b(mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|today|tomorrow|happening|yesterday)\b/i;
 const FULL_MONTH_RE  = /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
-const NOISE_RE       = /\b(interested|going|attending|share|invited|maybe)\b|\d+\s+(interested|going)/i;
+const NOISE_RE       = /\b(interested|going|attending|share|invited|maybe)\b|\d+\s+(interested|going)|notifications?/i;
+const UI_CHROME_SET  = new Set(['events', 'home', 'watch', 'marketplace', 'menu', 'notifications', 'your events']);
 const CITY_RE        = /^[A-Za-zÀ-ɏ][\w\sÀ-ɏ]{1,40},\s+[A-Za-zÀ-ɏ][\w\sÀ-ɏ]{1,40}$/;
 const MIN_RESPONDENTS = 10; // skip events with fewer total interested+going
 
@@ -88,19 +89,23 @@ function getTextLines(card) {
   return lines;
 }
 
+function isNoise(t) {
+  return NOISE_RE.test(t) || /^\d+$/.test(t) || t.length < 3 || t.length > 200 || UI_CHROME_SET.has(t.toLowerCase());
+}
+
 function pickLineAfterDate(lines, n) {
   let passedDate = false, count = 0;
   for (const t of lines) {
     if (DATE_WORD_RE.test(t)) { passedDate = true; continue; }
     if (!passedDate) continue;
-    if (NOISE_RE.test(t) || /^\d+$/.test(t) || t.length < 3 || t.length > 200) continue;
+    if (isNoise(t)) continue;
     if (count === n) return t;
     count++;
   }
   // Fallback: no date line found
   count = 0;
   for (const t of lines) {
-    if (NOISE_RE.test(t) || /^\d+$/.test(t) || t.length < 3 || t.length > 200) continue;
+    if (isNoise(t)) continue;
     if (count === n) return t;
     count++;
   }
@@ -172,6 +177,14 @@ function extractFromSearchResults(searchTerm) {
   return { events, debug: { cardRoots: cardRefs.length, skippedLowCount, mode: 'search' } };
 }
 
+// The left sidebar nav (Home/Your events/Notifications/Create new event) is
+// marked with role="navigation" in FB's markup. Skip any element that lives
+// inside it so venue/city/organizer scans don't pick up sidebar nav text —
+// this doesn't depend on guessing how many DOM levels separate it from the title.
+function isInSidebarNav(el) {
+  return !!el.closest('[role="navigation"]');
+}
+
 // ─── MODE B: Individual event detail page ────────────────────────────────────
 function extractFromEventDetailPage(searchTerm) {
   const collectedAt = new Date().toISOString();
@@ -184,6 +197,7 @@ function extractFromEventDetailPage(searchTerm) {
   // Date — full date text like "Saturday, June 27, 2026 at 8 PM"
   let start_datetime = null;
   for (const el of document.querySelectorAll('span, div, h2, strong')) {
+    if (isInSidebarNav(el)) continue;
     const t = leafText(el);
     if (!t || t.length < 8 || t.length > 100) continue;
     if (FULL_MONTH_RE.test(t) && /\bat\b/i.test(t)) { start_datetime = t; break; }
@@ -194,6 +208,7 @@ function extractFromEventDetailPage(searchTerm) {
   // Organizer — "Event by NAME" (the bold name after those two words)
   let organizer_name = null;
   for (const el of document.querySelectorAll('span, div, a')) {
+    if (isInSidebarNav(el)) continue;
     const t = leafText(el);
     if (!t) continue;
     const m = t.match(/^Event\s+by\s+(.{1,100})$/i);
@@ -210,6 +225,7 @@ function extractFromEventDetailPage(searchTerm) {
   // organizer, or city and is longer than a short phrase.
   const bodyText = Array.from(document.querySelectorAll('span, div, a'));
   for (const el of bodyText) {
+    if (isInSidebarNav(el)) continue;
     const t = leafText(el);
     if (!t || t.length < 5 || t.length > 150) continue;
     if (DATE_WORD_RE.test(t) || FULL_MONTH_RE.test(t)) continue;
@@ -220,6 +236,7 @@ function extractFromEventDetailPage(searchTerm) {
     if (/Public|Anyone\s+on/i.test(t)) continue; // skip privacy line
     if (/Tickets?|Find\s+tickets/i.test(t)) continue;
     if (/Discussion|About|Going|Interested|Invite/i.test(t)) continue;
+    if (UI_CHROME_SET.has(t.toLowerCase())) continue; // skip nav/breadcrumb chrome like "Events"
     // Must look like a place name: starts with a capital, reasonable length
     if (/^[A-Z]/.test(t) && t.length >= 5) { venue_name = t; break; }
   }
@@ -228,6 +245,7 @@ function extractFromEventDetailPage(searchTerm) {
   // These match "City, Country" or "City, Region" format.
   let city_location = null;
   for (const el of document.querySelectorAll('a, span, div')) {
+    if (isInSidebarNav(el)) continue;
     const t = leafText(el);
     if (!t || t.length > 60 || t.length < 5) continue;
     if (CITY_RE.test(t) && !DATE_WORD_RE.test(t) && !NOISE_RE.test(t)) {
@@ -239,6 +257,7 @@ function extractFromEventDetailPage(searchTerm) {
   // Description — first substantial paragraph
   let short_description = null;
   for (const p of document.querySelectorAll('p, [role="paragraph"]')) {
+    if (isInSidebarNav(p)) continue;
     const t = p.textContent.trim();
     if (t.length > 20) { short_description = t.substring(0, 500); break; }
   }
