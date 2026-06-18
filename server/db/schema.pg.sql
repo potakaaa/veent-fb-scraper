@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS events (
-  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  id                   SERIAL PRIMARY KEY,
   event_url            TEXT NOT NULL,
   event_url_normalized TEXT NOT NULL UNIQUE,
   title                TEXT NOT NULL,

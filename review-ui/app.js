@@ -31,7 +31,7 @@ function selectedIds() {
 function renderTable(events) {
   const tbody = document.getElementById('eventsBody');
   if (!events.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">No events found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">No events found.</td></tr>';
     return;
   }
   tbody.innerHTML = events.map(e => `
@@ -45,6 +45,7 @@ function renderTable(events) {
       <td class="resp-count">${e.respondent_count > 0 ? e.respondent_count : '—'}</td>
       <td><span class="tag">${esc(e.source_search_term)}</span></td>
       <td>${esc(formatDate(e.collected_at))}</td>
+      <td class="enriched-status">${e.enriched_at ? '✓' : '—'}</td>
       <td><input class="notes-input" type="text" value="${esc(e.notes || '')}" data-id="${e.id}" placeholder="Add notes…" /></td>
       <td><button class="btn-delete" data-id="${e.id}" title="Delete">&#128465;</button></td>
     </tr>
@@ -75,13 +76,13 @@ async function loadEvents() {
   if (to)   params.set('to', to);
 
   const tbody = document.getElementById('eventsBody');
-  tbody.innerHTML = '<tr><td colspan="11" class="empty">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="12" class="empty">Loading…</td></tr>';
   try {
     const events = await apiFetch(`/events?${params}`);
     renderTable(events);
     document.getElementById('countLabel').textContent = `${events.length} event(s)`;
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="11" class="empty" style="color:#e74c3c">Failed to load: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty" style="color:#e74c3c">Failed to load: ${err.message}</td></tr>`;
   }
 }
 

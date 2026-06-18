@@ -1,1 +1,7 @@
 .vibecode-backup*/
+
+.claude/hooks/.logs/*
+
+server/node_modules/
+
+.env
