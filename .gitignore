@@ -1,1 +1,5 @@
 .vibecode-backup*/
+
+.claude/hooks/.logs/*
+
+.env
