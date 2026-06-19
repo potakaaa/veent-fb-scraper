@@ -153,6 +153,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   // ── RELAY_EXTRACT_X ────────────────────────────────────────────────────────
   if (message.action === 'RELAY_EXTRACT_X') {
+    const xSearchTerm = message.searchTerm || ''; // capture before any async boundary
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tab = tabs[0];
       if (!tab || !X_URL_RE.test(tab.url)) {
@@ -219,7 +220,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             const res = await fetch(`${SERVER}/events/x`, {
               method:  'POST',
               headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify([tweet]),
+              body:    JSON.stringify([{ ...tweet, search_term: xSearchTerm }]),
             });
             const r = await res.json().catch(() => ({}));
             inserted   += r.inserted   ?? 0;

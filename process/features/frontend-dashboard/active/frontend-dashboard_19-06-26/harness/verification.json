@@ -1,0 +1,62 @@
+{
+  "evl_run": {
+    "phase": "Phase 3 — Dashboard Build",
+    "date": "2026-06-19",
+    "invocation": "EVL confirmation run (vc-tester, unconditional re-run)",
+    "plan": "process/features/frontend-dashboard/active/frontend-dashboard_19-06-26/frontend-dashboard_PLAN_19-06-26.md"
+  },
+  "gates": [
+    {
+      "id": "C1",
+      "label": "pnpm install at monorepo root",
+      "command": "cd /Volumes/Extreme_SSD/Work/Veent/FB Scraper/fb-events-tool && pnpm install",
+      "status": "PASS",
+      "exit_code": 0,
+      "notes": "Already up to date; warnings for build scripts (sharp, unrs-resolver) are non-blocking"
+    },
+    {
+      "id": "C3",
+      "label": "TypeScript build in apps/dashboard",
+      "command": "cd /Volumes/Extreme_SSD/Work/Veent/FB Scraper/fb-events-tool/apps/dashboard && pnpm run build",
+      "status": "PASS",
+      "exit_code": 0,
+      "notes": "Next.js 16.2.9 Turbopack build — compiled + TypeScript check + static page generation all passed"
+    },
+    {
+      "id": "FILE_EXISTENCE",
+      "label": "All 16 Phase 3 source files exist",
+      "status": "PASS",
+      "files_checked": [
+        "apps/dashboard/src/lib/types.ts",
+        "apps/dashboard/src/lib/api.ts",
+        "apps/dashboard/src/hooks/useEvents.ts",
+        "apps/dashboard/src/components/providers.tsx",
+        "apps/dashboard/src/components/stats/StatsCards.tsx",
+        "apps/dashboard/src/components/table/EventsTable.tsx",
+        "apps/dashboard/src/components/table/EventsTableFilters.tsx",
+        "apps/dashboard/src/components/charts/EventsOverTime.tsx",
+        "apps/dashboard/src/components/charts/SourceSplit.tsx",
+        "apps/dashboard/src/components/charts/TopCities.tsx",
+        "apps/dashboard/src/components/charts/TopOrganizers.tsx",
+        "apps/dashboard/src/components/charts/TopSearchTerms.tsx",
+        "apps/dashboard/src/components/charts/RespondentDistribution.tsx",
+        "apps/dashboard/src/components/feed/RecentFeed.tsx",
+        "apps/dashboard/src/app/page.tsx",
+        "apps/dashboard/src/app/layout.tsx"
+      ],
+      "all_present": true
+    }
+  ],
+  "overall": "PASS",
+  "gates_not_run_this_evl": [
+    "C2 — Next.js dev server (requires live port; not needed for EVL C3 build confirmation)",
+    "C4 — CORS curl check (Phase 2 gate; Phase 2 EVL not yet started)",
+    "C5 — Existing CORS origins (Phase 2 gate)",
+    "C6 — types.ts/api.ts content verification (file existence confirmed; full content verified by execute-agent)",
+    "C7 — browser smoke test (Phase 4 agent-probe; not automated)",
+    "C8 — PATCH/DELETE round-trips (Phase 4 agent-probe)",
+    "C9 — review-ui regression (Phase 4 agent-probe)"
+  ],
+  "adversarial_validation_required": false,
+  "risk_class": "LOW-MEDIUM (no schema/auth/billing surfaces touched)"
+}

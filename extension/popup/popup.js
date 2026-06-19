@@ -102,10 +102,13 @@ openSearchBtn.addEventListener('click', () => {
 extractBtn.addEventListener('click', async () => {
   // ── X.com mode ─────────────────────────────────────────────────────────────
   if (getMode() === 'x') {
+    const searchTerm = searchInput.value.trim();
+    if (!searchTerm) { setStatus('Enter a search term so tweets are tagged correctly.', 'error'); return; }
+
     extractBtn.disabled = true;
     setStatus('Collecting visible tweets…', 'loading');
 
-    chrome.runtime.sendMessage({ action: 'RELAY_EXTRACT_X' }, (resp) => {
+    chrome.runtime.sendMessage({ action: 'RELAY_EXTRACT_X', searchTerm }, (resp) => {
       if (chrome.runtime.lastError || resp?.error) {
         setStatus(`Collection failed: ${resp?.error || chrome.runtime.lastError?.message}`, 'error');
         extractBtn.disabled = false;

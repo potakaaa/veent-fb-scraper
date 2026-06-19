@@ -16,7 +16,7 @@ const app = express();
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || origin.startsWith('chrome-extension://') || origin === `http://localhost:${PORT}`) {
+    if (!origin || origin.startsWith('chrome-extension://') || origin === `http://localhost:${PORT}` || origin === 'http://localhost:3000') {
       callback(null, true);
     } else {
       callback(new Error(`CORS: origin "${origin}" not allowed`));

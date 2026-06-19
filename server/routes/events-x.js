@@ -143,7 +143,7 @@ router.post('/', async (req, res) => {
             fields.start_datetime ?? null, null,
             fields.venue_name     ?? null, fields.city_location ?? null,
             fields.organizer_name ?? null, fields.short_description ?? null,
-            `x.com/${clean.author_handle}`, clean.collected_at,
+            raw.search_term || `x.com/${clean.author_handle}`, clean.collected_at,
             0, 'x.com', enrichedAt,
           ]
         );
