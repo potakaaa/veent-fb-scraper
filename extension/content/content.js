@@ -25,14 +25,16 @@ function leafText(el) {
 }
 
 // Sum respondent numbers from a stats line like "411 interested · 71 going"
-// or "482 people responded". Returns 0 if no stats line is found.
+// or "482 people responded". Returns null when no stats line is visible at all
+// (e.g. logged-out Facebook hides counts) so the caller can skip the filter
+// rather than treating invisible counts as zero.
 function parseRespondentCount(lines) {
   for (const t of lines) {
     if (!/\b(interested|going|attended|went|responded|people)\b/i.test(t)) continue;
     const nums = t.match(/\d+/g);
     if (nums) return nums.reduce((sum, n) => sum + parseInt(n, 10), 0);
   }
-  return 0;
+  return null;
 }
 
 // ─── MODE A: Search-results page (multiple cards) ────────────────────────────
@@ -149,7 +151,9 @@ function extractFromSearchResults(searchTerm) {
     const lines           = getTextLines(root);
     const respondent_count = parseRespondentCount(lines);
 
-    if (respondent_count < MIN_RESPONDENTS) { skippedLowCount++; continue; }
+    // Only apply the threshold when counts are actually visible in the DOM.
+    // null means Facebook didn't render them (e.g. logged-out view) — include the event.
+    if (respondent_count !== null && respondent_count < MIN_RESPONDENTS) { skippedLowCount++; continue; }
 
     const title = pickLineAfterDate(lines, 0);
     if (!title) continue;
@@ -168,7 +172,7 @@ function extractFromSearchResults(searchTerm) {
       city_location:     null,
       organizer_name,
       short_description,
-      respondent_count,
+      respondent_count: respondent_count ?? 0,
       source_search_term: searchTerm,
       collected_at:       collectedAt,
     });
@@ -294,11 +298,40 @@ function extractCards(searchTerm) {
   return extractFromSearchResults(searchTerm);
 }
 
+// ─── Login-gate dismissal ─────────────────────────────────────────────────────
+// Facebook shows a login modal over event listings for logged-out users.
+// The event card data is still present in the DOM underneath — we just need
+// to remove the overlay so the user can scroll and interact normally.
+function dismissLoginModal() {
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    const text = dialog.textContent || '';
+    // Identify the login gate by the presence of login/signup language
+    if (!/log\s*in|sign\s*up|create\s*(an?\s*)?account/i.test(text)) continue;
+
+    const closeBtn = dialog.querySelector('[aria-label="Close"], [aria-label="close"]');
+    if (closeBtn) {
+      closeBtn.click();
+    } else {
+      dialog.remove();
+      // Remove any fixed-position backdrop sibling FB injects alongside the dialog
+      document.querySelectorAll('[data-visualcompletion="ignore-dynamic"]').forEach(el => {
+        if (el.style?.position === 'fixed' || getComputedStyle(el).position === 'fixed') el.remove();
+      });
+    }
+
+    // Restore body scroll that FB locks while the modal is open
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+    return;
+  }
+}
+
 // ─── Message listener ─────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action !== 'EXTRACT') return false;
 
   try {
+    dismissLoginModal();
     const { events, debug } = extractCards(message.searchTerm || '');
     sendResponse({ events, error: null, debug });
   } catch (err) {
