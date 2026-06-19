@@ -21,6 +21,11 @@
     <input id="filterTerm" type="text" placeholder="Filter by search term..." />
     <input id="filterFrom" type="date" title="From date" />
     <input id="filterTo"   type="date" title="To date" />
+    <select id="filterSource" title="Filter by source">
+      <option value="">All sources</option>
+      <option value="facebook">Facebook</option>
+      <option value="x.com">X.com</option>
+    </select>
     <button id="applyFilter" class="btn-secondary">Filter</button>
     <button id="clearFilter" class="btn-ghost">Clear</button>
     <span id="countLabel" class="count-label"></span>
@@ -46,6 +51,7 @@
           <th>Organizer</th>
           <th>Resp.</th>
           <th>Search Term</th>
+          <th>Source</th>
           <th>Collected</th>
           <th>Enriched</th>
           <th>Notes</th>
@@ -53,7 +59,7 @@
         </tr>
       </thead>
       <tbody id="eventsBody">
-        <tr><td colspan="12" class="empty">Loading...</td></tr>
+        <tr><td colspan="13" class="empty">Loading...</td></tr>
       </tbody>
     </table>
   </div>

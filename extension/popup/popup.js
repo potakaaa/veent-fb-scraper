@@ -12,28 +12,66 @@ function setStatus(msg, type = '') {
   statusEl.className   = `status ${type}`;
 }
 
+function getMode() {
+  const checked = document.querySelector('input[name="mode"]:checked');
+  return checked ? checked.value : 'facebook';
+}
+
+// Keep the extract button label in sync with the active mode.
+function updateExtractLabel() {
+  extractBtn.textContent = getMode() === 'x' ? 'Collect X.com Tweets' : 'Extract Visible Events';
+}
+
 function checkActiveTab() {
-  chrome.runtime.sendMessage({ action: 'CHECK_TAB' }, (resp) => {
+  const mode   = getMode();
+  const action = mode === 'x' ? 'CHECK_TAB_X' : 'CHECK_TAB';
+  chrome.runtime.sendMessage({ action }, (resp) => {
     if (resp?.valid) {
       extractBtn.disabled = false;
-      setStatus('Ready — click Extract to collect visible events.', '');
+      setStatus(
+        mode === 'x'
+          ? 'Ready — click Collect to gather visible tweets.'
+          : 'Ready — click Extract to collect visible events.',
+        ''
+      );
     } else {
       extractBtn.disabled = true;
-      setStatus(resp?.reason || 'Navigate to a Facebook Events page first.', 'error');
+      const fallback = mode === 'x'
+        ? 'Navigate to an X.com page first.'
+        : 'Navigate to a Facebook Events page first.';
+      setStatus(resp?.reason || fallback, 'error');
     }
   });
 }
 
-// ── Receive progress updates from background enrichment ──────────────────────
+// ── Receive progress updates from background ──────────────────────────────────
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.action !== 'ENRICH_PROGRESS') return;
-  if (msg.done) {
-    setStatus(
-      `Done! ${msg.enriched}/${msg.total} events enriched with organizer & city.`,
-      'success'
-    );
-  } else {
-    setStatus(`Enriching event ${msg.current}/${msg.total}…`, 'loading');
+  if (msg.action === 'ENRICH_PROGRESS') {
+    if (msg.done) {
+      setStatus(
+        `Done! ${msg.enriched}/${msg.total} events enriched with organizer & city.`,
+        'success'
+      );
+    } else {
+      setStatus(`Enriching event ${msg.current}/${msg.total}…`, 'loading');
+    }
+  }
+
+  if (msg.action === 'X_PROGRESS') {
+    if (msg.done) {
+      let summary = `Done! Saved ${msg.inserted} new`;
+      if (msg.duplicates > 0) summary += `, ${msg.duplicates} duplicate`;
+      if (msg.skipped    > 0) summary += `, ${msg.skipped} filtered`;
+      if (msg.errors     > 0) summary += `, ${msg.errors} error(s)`;
+      summary += '.';
+      setStatus(summary, 'success');
+      extractBtn.disabled = false;
+    } else {
+      setStatus(
+        `Processing tweet ${msg.current}/${msg.total} — ${msg.author}…`,
+        'loading'
+      );
+    }
   }
 });
 
@@ -41,7 +79,16 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.session.get(['lastSearchTerm'], (data) => {
     if (data.lastSearchTerm) searchInput.value = data.lastSearchTerm;
   });
+  updateExtractLabel();
   checkActiveTab();
+});
+
+// Switching mode re-checks the active tab and relabels the extract button.
+document.querySelectorAll('input[name="mode"]').forEach((radio) => {
+  radio.addEventListener('change', () => {
+    updateExtractLabel();
+    checkActiveTab();
+  });
 });
 
 openSearchBtn.addEventListener('click', () => {
@@ -53,6 +100,29 @@ openSearchBtn.addEventListener('click', () => {
 });
 
 extractBtn.addEventListener('click', async () => {
+  // ── X.com mode ─────────────────────────────────────────────────────────────
+  if (getMode() === 'x') {
+    extractBtn.disabled = true;
+    setStatus('Collecting visible tweets…', 'loading');
+
+    chrome.runtime.sendMessage({ action: 'RELAY_EXTRACT_X' }, (resp) => {
+      if (chrome.runtime.lastError || resp?.error) {
+        setStatus(`Collection failed: ${resp?.error || chrome.runtime.lastError?.message}`, 'error');
+        extractBtn.disabled = false;
+        return;
+      }
+      if (!resp?.started) {
+        setStatus('No tweets found. Scroll the timeline, then collect again.', 'error');
+        extractBtn.disabled = false;
+        return;
+      }
+      // Background is now processing — X_PROGRESS messages drive the status updates.
+      setStatus(`Found ${resp.total} tweet(s). Processing 1/${resp.total}…`, 'loading');
+    });
+    return;
+  }
+
+  // ── Facebook mode (unchanged) ────────────────────────────────────────────────
   const searchTerm = searchInput.value.trim();
   if (!searchTerm) { setStatus('Enter a search term so events are tagged correctly.', 'error'); return; }
 

@@ -11,4 +11,18 @@ function normalizeUrl(url) {
   }
 }
 
-module.exports = { normalizeUrl };
+// Normalize an X.com (Twitter) tweet URL to `x.com/status/{tweetId}`.
+// Strips the username, query params, and protocol so the same tweet dedups
+// regardless of which handle path or tracking params it arrived with.
+function normalizeXUrl(url) {
+  try {
+    const u = new URL(url);
+    const match = u.pathname.match(/\/(.*?)\/status\/(\d+)/i);
+    if (!match) return null;
+    return `x.com/status/${match[2]}`;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { normalizeUrl, normalizeXUrl };

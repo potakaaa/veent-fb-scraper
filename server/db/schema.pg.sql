@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS events (
   exported_at          TEXT,
   respondent_count     INTEGER NOT NULL DEFAULT 0,
   notes                TEXT,
-  enriched_at          TEXT
+  enriched_at          TEXT,
+  source               TEXT NOT NULL DEFAULT 'facebook'
 );
 
 CREATE INDEX IF NOT EXISTS idx_collected_at ON events(collected_at);

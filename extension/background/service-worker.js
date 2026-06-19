@@ -2,6 +2,7 @@
 
 const SERVER         = 'http://localhost:7842';
 const FB_EVENTS_RE   = /^https:\/\/www\.facebook\.com\/events\//;
+const X_URL_RE       = /^https:\/\/x\.com\//;
 const RENDER_DELAY   = 2500; // ms after tab "complete" for FB React to finish rendering
 const CONCURRENT     = 3;    // tabs open in parallel during enrichment
 
@@ -136,5 +137,111 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     })();
 
     return false; // already sent response above
+  }
+
+  // ── CHECK_TAB_X ────────────────────────────────────────────────────────────
+  if (message.action === 'CHECK_TAB_X') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.url) { sendResponse({ valid: false, reason: 'No active tab.' }); return; }
+      X_URL_RE.test(tab.url)
+        ? sendResponse({ valid: true, tabId: tab.id, url: tab.url })
+        : sendResponse({ valid: false, reason: 'Not on an X.com page.' });
+    });
+    return true;
+  }
+
+  // ── RELAY_EXTRACT_X ────────────────────────────────────────────────────────
+  if (message.action === 'RELAY_EXTRACT_X') {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0];
+      if (!tab || !X_URL_RE.test(tab.url)) {
+        sendResponse({ error: 'Not on an X.com page.' });
+        return;
+      }
+      try {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: function extractTweetsFromPage() {
+            const articles = document.querySelectorAll('article[data-testid="tweet"]');
+            const seen   = new Set();
+            const tweets = [];
+            for (const article of articles) {
+              let tweetUrl = null;
+              const statusLink = article.querySelector('a[href*="/status/"]');
+              if (statusLink) {
+                const href = statusLink.getAttribute('href') || '';
+                tweetUrl = href.startsWith('http') ? href : `https://x.com${href}`;
+              }
+              const textEl     = article.querySelector('[data-testid="tweetText"]');
+              const rawCaption = textEl ? (textEl.innerText || '').trim() : '';
+              if (!tweetUrl || !rawCaption) continue;
+              let authorHandle = '@unknown';
+              const userNameEl = article.querySelector('[data-testid="User-Name"]');
+              if (userNameEl) {
+                const m = (userNameEl.innerText || '').match(/@(\w+)/);
+                if (m) authorHandle = `@${m[1]}`;
+              }
+              let tweetTimestamp = new Date().toISOString();
+              const timeEl = article.querySelector('time');
+              if (timeEl && timeEl.getAttribute('datetime')) {
+                tweetTimestamp = timeEl.getAttribute('datetime');
+              }
+              if (seen.has(tweetUrl)) continue;
+              seen.add(tweetUrl);
+              tweets.push({ tweet_url: tweetUrl, raw_caption: rawCaption, author_handle: authorHandle, tweet_timestamp: tweetTimestamp });
+            }
+            return tweets;
+          },
+        });
+
+        const tweets = result?.result || [];
+        if (!tweets.length) {
+          sendResponse({ started: false, error: 'No tweets found on this page.' });
+          return;
+        }
+
+        // Release the popup's message channel immediately, then process in background.
+        sendResponse({ started: true, total: tweets.length });
+
+        let inserted = 0, duplicates = 0, skipped = 0, errors = 0;
+        for (let i = 0; i < tweets.length; i++) {
+          const tweet = tweets[i];
+          chrome.runtime.sendMessage({
+            action:  'X_PROGRESS',
+            current: i + 1,
+            total:   tweets.length,
+            author:  tweet.author_handle,
+            done:    false,
+          }).catch(() => {});
+
+          try {
+            const res = await fetch(`${SERVER}/events/x`, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify([tweet]),
+            });
+            const r = await res.json().catch(() => ({}));
+            inserted   += r.inserted   ?? 0;
+            duplicates += r.duplicates ?? 0;
+            skipped    += r.skipped    ?? 0;
+            errors     += (r.errors || []).length;
+          } catch {
+            errors++;
+          }
+        }
+
+        chrome.runtime.sendMessage({
+          action: 'X_PROGRESS',
+          done: true,
+          total: tweets.length,
+          inserted, duplicates, skipped, errors,
+        }).catch(() => {});
+
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    });
+    return true;
   }
 });

@@ -9,6 +9,7 @@ class SanitizationError extends Error {
 
 const EVENT_URL_RE  = /facebook\.com\/events\/\d+/i;
 const PROFILE_URL_RE = /facebook\.com\/(?!events\/)/i;
+const X_URL_RE      = /x\.com\/(.*?)\/status\/\d+/i;
 const EMAIL_RE      = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const PHONE_RE      = /(\+?\d[\d\s\-().]{7,}\d)/;
 const HTML_TAG_RE   = /<[^>]+>/g;
@@ -67,4 +68,32 @@ function sanitize(card) {
   return clean;
 }
 
-module.exports = { sanitize, SanitizationError };
+function sanitizeX(card) {
+  if (!card || typeof card !== 'object') throw new SanitizationError('Invalid card object');
+
+  const tweetUrl = (card.tweet_url || '').trim();
+  if (!X_URL_RE.test(tweetUrl)) {
+    throw new SanitizationError(`Invalid X.com tweet URL: "${tweetUrl}"`);
+  }
+
+  const rawCaption = (card.raw_caption || '').trim();
+  if (!rawCaption) throw new SanitizationError('Missing tweet caption');
+
+  const authorHandle = (card.author_handle || '').trim();
+  if (!authorHandle) throw new SanitizationError('Missing author handle');
+
+  rejectPii('raw_caption',   rawCaption);
+  rejectPii('author_handle', authorHandle);
+
+  const caption = stripHtml(rawCaption).substring(0, 1000);
+
+  return {
+    tweet_url:       tweetUrl,
+    raw_caption:     caption,
+    author_handle:   authorHandle,
+    tweet_timestamp: card.tweet_timestamp || new Date().toISOString(),
+    collected_at:    new Date().toISOString(),
+  };
+}
+
+module.exports = { sanitize, sanitizeX, SanitizationError };

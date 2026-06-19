@@ -31,7 +31,7 @@ function selectedIds() {
 function renderTable(events) {
   const tbody = document.getElementById('eventsBody');
   if (!events.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty">No events found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="empty">No events found.</td></tr>';
     return;
   }
   tbody.innerHTML = events.map(e => `
@@ -44,6 +44,7 @@ function renderTable(events) {
       <td>${esc(e.organizer_name) || '—'}</td>
       <td class="resp-count">${e.respondent_count > 0 ? e.respondent_count : '—'}</td>
       <td><span class="tag">${esc(e.source_search_term)}</span></td>
+      <td><span class="badge badge-${e.source === 'x.com' ? 'x' : 'fb'}">${esc(e.source || 'facebook')}</span></td>
       <td>${esc(formatDate(e.collected_at))}</td>
       <td class="enriched-status">${e.enriched_at ? '✓' : '—'}</td>
       <td><input class="notes-input" type="text" value="${esc(e.notes || '')}" data-id="${e.id}" placeholder="Add notes…" /></td>
@@ -67,22 +68,24 @@ function updateBulkBar() {
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadEvents() {
-  const term = document.getElementById('filterTerm').value.trim();
-  const from = document.getElementById('filterFrom').value;
-  const to   = document.getElementById('filterTo').value;
+  const term   = document.getElementById('filterTerm').value.trim();
+  const from   = document.getElementById('filterFrom').value;
+  const to     = document.getElementById('filterTo').value;
+  const source = document.getElementById('filterSource').value;
   const params = new URLSearchParams({ limit: 500 });
-  if (term) params.set('term', term);
-  if (from) params.set('from', from);
-  if (to)   params.set('to', to);
+  if (term)   params.set('term', term);
+  if (from)   params.set('from', from);
+  if (to)     params.set('to', to);
+  if (source) params.set('source', source);
 
   const tbody = document.getElementById('eventsBody');
-  tbody.innerHTML = '<tr><td colspan="12" class="empty">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="13" class="empty">Loading…</td></tr>';
   try {
     const events = await apiFetch(`/events?${params}`);
     renderTable(events);
     document.getElementById('countLabel').textContent = `${events.length} event(s)`;
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="12" class="empty" style="color:#e74c3c">Failed to load: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty" style="color:#e74c3c">Failed to load: ${err.message}</td></tr>`;
   }
 }
 
@@ -157,14 +160,16 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 // Filters
 document.getElementById('applyFilter').addEventListener('click', loadEvents);
 document.getElementById('clearFilter').addEventListener('click', () => {
-  document.getElementById('filterTerm').value = '';
-  document.getElementById('filterFrom').value = '';
-  document.getElementById('filterTo').value   = '';
+  document.getElementById('filterTerm').value   = '';
+  document.getElementById('filterFrom').value   = '';
+  document.getElementById('filterTo').value     = '';
+  document.getElementById('filterSource').value = '';
   loadEvents();
 });
 document.getElementById('filterTerm').addEventListener('input', () => {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(loadEvents, 400);
 });
+document.getElementById('filterSource').addEventListener('change', loadEvents);
 
 loadEvents();

@@ -153,3 +153,34 @@ td.empty { text-align: center; color: #65676b; padding: 32px; }
   font-size: 11px;
   font-weight: 600;
 }
+
+select {
+  border: 1px solid #ccd0d5;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+  background: #f0f2f5;
+  cursor: pointer;
+}
+select:focus {
+  border-color: #1877f2;
+  background: #fff;
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+.badge-fb {
+  background: #e7f3ff;
+  color: #1877f2;
+}
+.badge-x {
+  background: #e8e8e8;
+  color: #0f1419;
+}

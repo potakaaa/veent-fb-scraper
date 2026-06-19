@@ -6,8 +6,9 @@ const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
 
-const eventsRouter = require('./routes/events');
-const exportRouter = require('./routes/export');
+const eventsRouter  = require('./routes/events');
+const eventsXRouter = require('./routes/events-x');
+const exportRouter  = require('./routes/export');
 
 const PORT = 7842;
 
@@ -26,6 +27,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '512kb' }));
 
+app.use('/events/x', eventsXRouter);
 app.use('/events', eventsRouter);
 app.use('/export', exportRouter);
 

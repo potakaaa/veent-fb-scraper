@@ -29,8 +29,8 @@ router.post('/', async (req, res) => {
           `INSERT INTO events
              (event_url, event_url_normalized, title, start_datetime, end_datetime,
               venue_name, city_location, organizer_name, short_description,
-              source_search_term, collected_at, respondent_count)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+              source_search_term, collected_at, respondent_count, source)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            ON CONFLICT (event_url_normalized) DO NOTHING`,
           [
             clean.event_url, normalized, clean.title,
@@ -38,7 +38,7 @@ router.post('/', async (req, res) => {
             clean.venue_name       ?? null, clean.city_location ?? null,
             clean.organizer_name   ?? null, clean.short_description ?? null,
             clean.source_search_term, clean.collected_at,
-            clean.respondent_count ?? 0,
+            clean.respondent_count ?? 0, 'facebook',
           ]
         );
         if (result.rowCount > 0) inserted++;
@@ -91,13 +91,14 @@ router.post('/enrich', async (req, res) => {
 
 // GET /events
 router.get('/', async (req, res) => {
-  const { term, from, to, limit = 200, offset = 0 } = req.query;
+  const { term, from, to, source, limit = 200, offset = 0 } = req.query;
 
   let sql    = 'SELECT * FROM events WHERE TRUE';
   const params = [];
-  if (term) { params.push(`%${term}%`); sql += ` AND source_search_term ILIKE $${params.length}`; }
-  if (from) { params.push(from);        sql += ` AND collected_at >= $${params.length}`; }
-  if (to)   { params.push(to);          sql += ` AND collected_at <= $${params.length}`; }
+  if (term)   { params.push(`%${term}%`); sql += ` AND source_search_term ILIKE $${params.length}`; }
+  if (from)   { params.push(from);        sql += ` AND collected_at >= $${params.length}`; }
+  if (to)     { params.push(to);          sql += ` AND collected_at <= $${params.length}`; }
+  if (source) { params.push(source);      sql += ` AND source = $${params.length}`; }
   params.push(parseInt(limit,  10));
   params.push(parseInt(offset, 10));
   sql += ` ORDER BY collected_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;

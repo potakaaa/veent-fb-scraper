@@ -10,7 +10,9 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://www.facebook.com/events/*"
+    "https://www.facebook.com/events/*",
+    "https://x.com/*",
+    "https://twitter.com/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js"
@@ -23,6 +25,11 @@
     {
       "matches": ["https://www.facebook.com/events/*"],
       "js": ["content/content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://x.com/*"],
+      "js": ["content/content-x.js"],
       "run_at": "document_idle"
     }
   ]
