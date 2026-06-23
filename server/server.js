@@ -17,6 +17,7 @@ const ALLOWED_ORIGINS = new Set([
   `http://localhost:${PORT}`,
   'http://localhost:3000',
   'http://localhost:3001',
+  'http://localhost:3002',
   ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : []),
 ]);
 

@@ -6,6 +6,9 @@ const searchInput  = document.getElementById('searchTerm');
 const openSearchBtn = document.getElementById('openSearch');
 const extractBtn   = document.getElementById('extractBtn');
 const statusEl     = document.getElementById('status');
+const batchSection   = document.getElementById('batchSection');
+const batchRunBtn    = document.getElementById('batchRunBtn');
+const batchKeywordsEl = document.getElementById('batchKeywords');
 
 function setStatus(msg, type = '') {
   statusEl.textContent = msg;
@@ -20,6 +23,9 @@ function getMode() {
 // Keep the extract button label in sync with the active mode.
 function updateExtractLabel() {
   const mode = getMode();
+  // Batch section is Posts-mode only. This MUST run before the early returns below
+  // so the section also hides correctly when switching to X mode.
+  if (batchSection) batchSection.style.display = (mode === 'posts') ? '' : 'none';
   if (mode === 'x')     { extractBtn.textContent = 'Collect X.com Tweets'; return; }
   if (mode === 'posts') { extractBtn.textContent = 'Collect FB Posts';     return; }
   extractBtn.textContent = 'Extract Visible Events';
@@ -114,11 +120,38 @@ chrome.runtime.onMessage.addListener((msg) => {
       setStatus(`Processing post ${msg.current}/${msg.total}…`, 'loading');
     }
   }
+
+  if (msg.action === 'BATCH_POSTS_PROGRESS') {
+    if (msg.done === true) {
+      const summary =
+        `Batch done! ${msg.totalInserted} inserted, ${msg.totalDuplicates} duplicates across ${msg.totalKeywords} keywords.`;
+      setStatus(summary, 'success');
+      batchRunBtn.disabled = false;
+    } else if (msg.done === false) {
+      const errNote = msg.serverError ? ' (server error — is the server running?)' : '';
+      setStatus(
+        `Keyword ${msg.keywordIndex + 1}/${msg.total}: "${msg.keyword}" — extracted ${msg.extracted}, saved ${msg.inserted}${errNote}`,
+        'loading'
+      );
+    }
+  }
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-  chrome.storage.session.get(['lastSearchTerm'], (data) => {
+  chrome.storage.session.get(['lastSearchTerm', 'batchLastResult'], (data) => {
     if (data.lastSearchTerm) searchInput.value = data.lastSearchTerm;
+    // If a batch completed while the popup was closed (new tab stole focus), show the result now.
+    if (data.batchLastResult) {
+      const r = data.batchLastResult;
+      // Only show if completed within the last 5 minutes.
+      if (Date.now() - r.completedAt < 5 * 60 * 1000) {
+        setStatus(
+          `Last batch: ${r.totalInserted} inserted, ${r.totalDuplicates} duplicates across ${r.totalKeywords} keywords.`,
+          r.totalInserted > 0 ? 'success' : ''
+        );
+      }
+      chrome.storage.session.remove('batchLastResult');
+    }
   });
   updateExtractLabel();
   checkActiveTab();
@@ -264,6 +297,26 @@ extractBtn.addEventListener('click', async () => {
       setStatus(`Server error: ${err.message}. Is the server running?`, 'error');
     } finally {
       extractBtn.disabled = false;
+    }
+  });
+});
+
+// ── Batch keyword search (Posts mode) ─────────────────────────────────────────
+batchRunBtn.addEventListener('click', () => {
+  const keywords = batchKeywordsEl.value
+    .split(',')
+    .map(k => k.trim())
+    .filter(Boolean);
+
+  if (keywords.length === 0) { setStatus('Enter at least one keyword.', 'error'); return; }
+
+  batchRunBtn.disabled = true;
+  setStatus(`Starting batch for ${keywords.length} keyword(s)…`, 'loading');
+
+  chrome.runtime.sendMessage({ action: 'BATCH_POSTS_SEARCH', keywords }, (resp) => {
+    if (chrome.runtime.lastError || resp?.error) {
+      setStatus(`Batch failed: ${resp?.error || chrome.runtime.lastError?.message}`, 'error');
+      batchRunBtn.disabled = false;
     }
   });
 });

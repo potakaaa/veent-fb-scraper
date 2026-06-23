@@ -291,4 +291,28 @@ router.post('/reprocess', async (req, res) => {
   }
 });
 
+// GET /events/posts/known-urls?term=<search_term> — return the raw event_url
+// values already stored for a given keyword so the extension can skip them
+// during re-extraction. Mounted at /events/posts, so the full path is
+// /events/posts/known-urls. Declared before module.exports (no /:id routes
+// exist on this router, so there is no ID-collision risk to guard against).
+router.get('/known-urls', async (req, res) => {
+  const term = (req.query.term || '').trim();
+  // No term → return empty immediately. Avoids a full-table scan and matches
+  // the "absent term returns {urls:[]}" contract.
+  if (!term) return res.json({ urls: [] });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT event_url FROM events
+       WHERE source = 'facebook.posts' AND source_search_term = $1`,
+      [term],
+    );
+    res.json({ urls: rows.map(r => r.event_url) });
+  } catch (e) {
+    console.error('[posts] known-urls query failed:', e.message);
+    res.status(500).json({ urls: [], error: e.message });
+  }
+});
+
 module.exports = router;

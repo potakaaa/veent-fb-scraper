@@ -10,6 +10,25 @@ const CONCURRENT     = 3;    // tabs open in parallel during enrichment
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Fetch the raw event_url values already stored for a search term so the content
+// script can skip them during extraction. Content scripts run in the page origin
+// (facebook.com) and cannot reach localhost — only the service worker can. Always
+// resolves to an array; never throws (server-down → []).
+async function fetchKnownUrls(searchTerm) {
+  if (!searchTerm) return [];
+  return fetch(`${SERVER}/events/posts/known-urls?term=${encodeURIComponent(searchTerm)}`)
+    .then(r => r.json())
+    .then(d => d.urls || [])
+    .catch(() => []);
+}
+
+// MV3 keepalive: chrome.alarms fire every ~24 s during long batch runs to prevent
+// the service worker from being terminated by Chrome's 30-second idle timer.
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== 'batchKeepalive') return;
+  // no-op — the alarm event itself resets the SW idle timer
+});
+
 function waitForTabComplete(tabId, timeoutMs = 20000) {
   return new Promise(resolve => {
     const fallback = setTimeout(resolve, timeoutMs);
@@ -265,13 +284,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // (chrome.tabs.sendMessage) — same pattern as RELAY_EXTRACT, NOT executeScript.
   if (message.action === 'RELAY_EXTRACT_POSTS') {
     const searchTerm = message.searchTerm || ''; // capture before any async boundary
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    // async callback so we can await fetchKnownUrls before messaging the tab.
+    // Chrome ignores the returned Promise from an async query callback — safe.
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tab = tabs[0];
       if (!tab || !FB_URL_RE.test(tab.url)) {
         sendResponse({ started: false, error: 'Not on a Facebook page.' });
         return;
       }
-      chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_POSTS', autoScroll: true }, async (resp) => {
+      const knownUrls = await fetchKnownUrls(searchTerm);
+      chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_POSTS', autoScroll: true, knownUrls }, async (resp) => {
         if (chrome.runtime.lastError) {
           sendResponse({ started: false, error: chrome.runtime.lastError.message });
           return;
@@ -290,15 +312,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ started: true, total: posts.length });
 
         let inserted = 0, duplicates = 0, skipped = 0, errors = 0;
-        let processed = 0;
-        for (let i = 0; i < posts.length; i += POSTS_BATCH) {
-          const batch = posts.slice(i, i + POSTS_BATCH).map((p) => ({ ...p, search_term: searchTerm }));
+        for (let i = 0; i < posts.length; i++) {
+          const post = posts[i];
+
+          chrome.runtime.sendMessage({
+            action:  'POSTS_PROGRESS',
+            current: i + 1,
+            total:   posts.length,
+            done:    false,
+          }).catch(() => {});
 
           try {
             const res = await fetch(`${SERVER}/events/posts`, {
               method:  'POST',
               headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify(batch),
+              body:    JSON.stringify([{ ...post, search_term: searchTerm }]),
             });
             const r = await res.json().catch(() => ({}));
             inserted   += r.inserted   ?? 0;
@@ -306,16 +334,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             skipped    += r.skipped    ?? 0;
             errors     += (r.errors || []).length;
           } catch {
-            errors += batch.length;
+            errors++;
           }
-
-          processed += batch.length;
-          chrome.runtime.sendMessage({
-            action:  'POSTS_PROGRESS',
-            current: Math.min(processed, posts.length),
-            total:   posts.length,
-            done:    false,
-          }).catch(() => {});
         }
 
         chrome.runtime.sendMessage({
@@ -327,5 +347,109 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
     });
     return true;
+  }
+
+  // ── BATCH_POSTS_SEARCH ──────────────────────────────────────────────────────
+  // Loop over comma-separated keywords (validated in popup.js). One tab is reused
+  // for every keyword: navigate → wait → click "Recent" filter (fail-safe) →
+  // auto-scroll + extract → chunk-POST to /events/posts tagged with the keyword →
+  // broadcast per-keyword progress. The button re-enable + final broadcast live in
+  // the finally block so they always fire, even if a keyword errors mid-loop.
+  if (message.action === 'BATCH_POSTS_SEARCH') {
+    const keywords = message.keywords; // already validated as a non-empty array in popup.js
+    let batchTab = null;
+    let totalInserted = 0, totalDuplicates = 0;
+
+    sendResponse({ started: true }); // release popup's message channel immediately
+
+    // Start keepalive alarm before entering the long async loop.
+    chrome.alarms.create('batchKeepalive', { periodInMinutes: 0.4 });
+    chrome.action.setBadgeBackgroundColor({ color: '#1877f2' });
+
+    (async () => {
+      try {
+        for (let i = 0; i < keywords.length; i++) {
+          const kw  = keywords[i];
+          const url = `https://www.facebook.com/search/posts?q=${encodeURIComponent(kw)}`;
+
+          // Badge shows current keyword index so user can track progress even when popup is closed.
+          chrome.action.setBadgeText({ text: `${i + 1}/${keywords.length}` });
+
+          // Reuse one tab across keywords: create on the first, update on the rest.
+          // active:true ensures full JS execution speed — background tabs throttle
+          // timers and React rendering, which breaks autoScroll and page load.
+          if (!batchTab) batchTab = await chrome.tabs.create({ url, active: true });
+          else           await chrome.tabs.update(batchTab.id, { url });
+
+          await waitForTabComplete(batchTab.id);
+          await sleep(RENDER_DELAY);
+
+          // Fail-safe: ignore the result — if the Recent filter button is absent the
+          // batch continues with the default sort order.
+          await sendToTab(batchTab.id, { action: 'CLICK_RECENT_FILTER' });
+          await sleep(800); // let Facebook re-sort after the filter click
+
+          // Pull already-stored URLs for this keyword so the content script can
+          // skip them — drives both the fresh-count early exit and dedup-on-extract.
+          const knownUrls = await fetchKnownUrls(kw);
+          const resp      = await sendToTab(batchTab.id, { action: 'EXTRACT_POSTS', autoScroll: true, knownUrls });
+          const posts     = resp?.posts || [];
+          const extracted = posts.length;
+
+          let inserted = 0, duplicates = 0, serverError = false;
+
+          // Chunked POST: single call when small, sliced into POSTS_BATCH chunks otherwise.
+          for (let j = 0; j < posts.length; j += POSTS_BATCH) {
+            const chunk = posts.slice(j, j + POSTS_BATCH);
+            try {
+              const res = await fetch(`${SERVER}/events/posts`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(chunk.map(p => ({ ...p, search_term: kw }))),
+              });
+              const r = await res.json().catch(() => ({}));
+              inserted   += r.inserted   ?? 0;
+              duplicates += r.duplicates ?? 0;
+            } catch (err) {
+              console.error('[batch] POST failed for keyword', kw, err);
+              serverError = true;
+            }
+          }
+
+          totalInserted   += inserted;
+          totalDuplicates += duplicates;
+
+          chrome.runtime.sendMessage({
+            action: 'BATCH_POSTS_PROGRESS',
+            keyword: kw,
+            keywordIndex: i,
+            total: keywords.length,
+            done: false,
+            extracted,
+            inserted,
+            duplicates,
+            serverError,
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('[batch]', err);
+      } finally {
+        chrome.alarms.clear('batchKeepalive');
+        chrome.action.setBadgeText({ text: '' });
+        if (batchTab) chrome.tabs.remove(batchTab.id).catch(() => {});
+        const finalMsg = {
+          action: 'BATCH_POSTS_PROGRESS',
+          done: true,
+          totalInserted,
+          totalDuplicates,
+          totalKeywords: keywords.length,
+        };
+        // Persist result so popup can show it when it reopens after the batch tab closed it.
+        chrome.storage.session.set({ batchLastResult: { ...finalMsg, completedAt: Date.now() } });
+        chrome.runtime.sendMessage(finalMsg).catch(() => {});
+      }
+    })();
+
+    return true; // async — keep the message channel open (MV3)
   }
 });

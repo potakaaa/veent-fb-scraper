@@ -5,6 +5,7 @@
   "description": "Human-assisted public Facebook Events metadata collector for local research.",
   "permissions": [
     "activeTab",
+    "alarms",
     "scripting",
     "storage",
     "tabs"

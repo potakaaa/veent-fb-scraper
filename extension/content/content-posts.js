@@ -12,6 +12,7 @@
 // scrapers never collide.
 
 const MIN_CAPTION_LEN = 20;
+const MIN_FRESH_TARGET = 15;  // stop early when this many fresh posts are visible in DOM
 
 // Google Form / short-link patterns (Tier 1, client-side). Matches both direct
 // Google Forms and common short URLs that frequently wrap a form link.
@@ -191,7 +192,7 @@ function findPostContainerFromNode(el) {
   return null;
 }
 
-function extractPosts() {
+function extractPosts(knownSet = null) {
   const seen           = new Set();    // dedup by URL path
   const seenCards      = new WeakSet(); // one entry per post container
   const seenCaptions   = new Set();    // dedup by caption prefix — same post can yield two containers
@@ -231,6 +232,11 @@ function extractPosts() {
     })();
 
     const dedupeKey = href.replace(/[?#].*$/, '');
+    // Known-URL dedup: skip posts already stored for this keyword. href is already
+    // absolute here (findPostUrl → toAbsolute), so dedupeKey is the absolute key;
+    // the toAbsolute() form is checked too as a defensive second key. The within-page
+    // `seen` check below still runs regardless (intra-page dedup is unchanged).
+    if (knownSet && (knownSet.has(dedupeKey) || knownSet.has(toAbsolute(href).replace(/[?#].*$/, '')))) continue;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
@@ -296,54 +302,149 @@ async function expandSeeMore() {
   }
 }
 
-// Scroll the page gradually in human-like increments until no new posts appear
-// for MAX_IDLE_ROUNDS consecutive checks. Respects a hard cap to avoid infinite loops.
-async function autoScroll() {
-  const MAX_ROUNDS    = 25;   // hard cap (roughly 10-15 s total scroll time)
-  const MAX_IDLE      = 3;    // stop after 3 rounds with no new div[dir="auto"] blocks
-  const SCROLL_MIN    = 280;
-  const SCROLL_MAX    = 520;
-  const PAUSE_MIN     = 600;
-  const PAUSE_MAX     = 1400;
+// Fast scan: count how many post anchors in the DOM are NOT already stored.
+// Runs after each scroll round, so it must stay cheap — anchor tags only, no
+// full container walk or caption extraction. Strips query params for matching
+// (mirrors the dedupeKey logic used in extractPosts). Returns Infinity when
+// knownSet is null so the fresh-count early exit never fires (existing idle
+// logic is then completely unchanged).
+function countFreshAnchors(knownSet) {
+  if (!knownSet) return Infinity;
 
+  const freshKeys = new Set(); // dedup fresh anchors within this scan
+  for (const a of document.querySelectorAll('a[href]')) {
+    const href = a.getAttribute('href') || '';
+    if (!isPostHref(href)) continue;
+
+    const rawKey = href.replace(/[?#].*$/, '');
+    const absKey = toAbsolute(href).replace(/[?#].*$/, '');
+    if (knownSet.has(rawKey) || knownSet.has(absKey)) continue;
+
+    freshKeys.add(absKey);
+  }
+  return freshKeys.size;
+}
+
+// Click page-level "See more results" / "See more posts" buttons that appear at
+// the bottom of Facebook search result lists. These load the NEXT PAGE of results
+// and must be distinguished from within-post caption expanders (handled by
+// expandSeeMore). We skip any button that lives inside a div[dir="auto"] block.
+async function clickSeeMoreResults() {
+  const labels = /^(see more results|see more posts|more results|see more)$/i;
+  let clicked = 0;
+  for (const el of document.querySelectorAll('[role="button"], button')) {
+    const txt = (el.innerText || el.textContent || '').trim();
+    if (!labels.test(txt)) continue;
+    if (el.closest('div[dir="auto"]')) continue; // within-post expander — skip
+    if (el.offsetParent === null) continue;       // not visible
+    humanClick(el);
+    clicked++;
+    await sleep(randInt(100, 250));
+  }
+  if (clicked > 0) {
+    console.log('[content-posts] clickSeeMoreResults: clicked', clicked, 'result-loader button(s)');
+    await sleep(randInt(800, 1500));
+  }
+  return clicked;
+}
+
+// Scroll the page to the absolute bottom on each round so Facebook's
+// IntersectionObserver sentinel (placed at the end of the results list) is
+// always in the viewport. Fixed scrollBy amounts used to overshoot the sentinel,
+// causing the observer to miss the scroll event entirely.
+async function autoScroll(knownSet = null) {
+  const MAX_ROUNDS = 30;
+  const MAX_IDLE   = 5;    // idle rounds before giving up
+  const PAUSE_MIN  = 1500; // wait for Facebook to fetch & render the next batch
+  const PAUSE_MAX  = 3000;
+
+  let lastHeight = document.body.scrollHeight;
+  let lastCount  = document.querySelectorAll('div[dir="auto"]').length;
   let idleRounds = 0;
-  let lastCount   = document.querySelectorAll('div[dir="auto"]').length;
 
-  console.log('[content-posts] autoScroll: start (dir=auto baseline:', lastCount, ')');
+  console.log('[content-posts] autoScroll: start (height:', lastHeight, ', dir=auto baseline:', lastCount, ')');
 
   for (let i = 0; i < MAX_ROUNDS; i++) {
-    // Scroll a random amount — sometimes two shorter sub-scrolls to look human.
-    const total = randInt(SCROLL_MIN, SCROLL_MAX);
-    const mid   = Math.random() > 0.4 ? randInt(80, total - 60) : total;
-    window.scrollBy({ top: mid, behavior: 'smooth' });
-    await sleep(randInt(120, 280));
-    if (mid < total) {
-      window.scrollBy({ top: total - mid, behavior: 'smooth' });
-      await sleep(randInt(80, 180));
-    }
+    // Scroll to the very bottom — keeps the IntersectionObserver sentinel visible.
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    await sleep(randInt(600, 1000));
 
-    // Pause while Facebook loads more posts.
+    // Click any "See more results" buttons before waiting for new content.
+    await clickSeeMoreResults();
+
+    // Give Facebook time to load and render the next batch.
     await sleep(randInt(PAUSE_MIN, PAUSE_MAX));
 
-    const newCount = document.querySelectorAll('div[dir="auto"]').length;
-    if (newCount > lastCount) {
-      console.log('[content-posts] autoScroll: new blocks', lastCount, '→', newCount);
-      lastCount   = newCount;
-      idleRounds  = 0;
-      // After new posts load, expand any newly revealed "See more" buttons.
+    const newHeight = document.body.scrollHeight;
+    const newCount  = document.querySelectorAll('div[dir="auto"]').length;
+    const gotNew    = newHeight > lastHeight || newCount > lastCount;
+
+    if (gotNew) {
+      console.log('[content-posts] autoScroll: new content (height:', lastHeight, '→', newHeight,
+                  ', dir=auto:', lastCount, '→', newCount, ')');
+      lastHeight = newHeight;
+      lastCount  = newCount;
+      idleRounds = 0;
       await expandSeeMore();
     } else {
       idleRounds++;
       console.log('[content-posts] autoScroll: idle round', idleRounds, '/', MAX_IDLE);
       if (idleRounds >= MAX_IDLE) break;
     }
+
+    // Fresh-post early exit: countFreshAnchors returns Infinity when knownSet is
+    // null, so this check never fires in the no-dedup case.
+    if (gotNew || i % 3 === 0) {
+      const freshCount = countFreshAnchors(knownSet);
+      if (freshCount >= MIN_FRESH_TARGET) {
+        console.log('[content-posts] autoScroll: fresh target reached', freshCount, '>=', MIN_FRESH_TARGET, '— stopping');
+        break;
+      }
+    }
   }
-  console.log('[content-posts] autoScroll: done (dir=auto final:', document.querySelectorAll('div[dir="auto"]').length, ')');
+  console.log('[content-posts] autoScroll: done (height:', document.body.scrollHeight,
+              ', dir=auto final:', document.querySelectorAll('div[dir="auto"]').length, ')');
+}
+
+// ── Recent-posts filter ─────────────────────────────────────────────────────────
+
+// Find and click Facebook's "Recent posts" sort filter on a search results page.
+// Locale-aware (English + Dutch) and fail-safe: returns false (never throws) when
+// no matching button is present so the batch can continue without it.
+function clickRecentFilter() {
+  // 1 — aria-label (most stable when present)
+  let el = document.querySelector('[aria-label="Recent posts"], [aria-label="Recente berichten"]');
+
+  // 2 — tab / button elements whose text mentions "recent"
+  if (!el) {
+    el = [...document.querySelectorAll('div[role="tab"], span[role="button"]')]
+      .find(e => /recent/i.test(e.innerText) || /recente/i.test(e.innerText));
+  }
+
+  // 3 — any span/div whose trimmed text is exactly the filter label
+  if (!el) {
+    el = [...document.querySelectorAll('span, div')]
+      .find(e => /^(recent posts|recente berichten)$/i.test((e.innerText || '').trim()));
+  }
+
+  if (el) {
+    humanClick(el);
+    console.log('[content-posts] CLICK_RECENT_FILTER: clicked');
+    return true;
+  }
+
+  console.log('[content-posts] CLICK_RECENT_FILTER: not found — continuing');
+  return false;
 }
 
 // ── Message handler ────────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.action === 'CLICK_RECENT_FILTER') {
+    sendResponse({ clicked: clickRecentFilter() });
+    return false;
+  }
+
   if (message.action === 'EXTRACT_POSTS') {
     // Guard: never scrape the Events surface — content.js owns that page.
     if (isEventsPage()) {
@@ -351,14 +452,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
     }
 
+    // Build the known-URL set from the service-worker-supplied list. Strip query
+    // params so keys match the dedupeKey form used in extractPosts/countFreshAnchors.
+    // Absent or empty → null, so all existing logic runs unchanged (backwards compatible).
+    const knownSet = message.knownUrls?.length
+      ? new Set(message.knownUrls.map(u => u.replace(/[?#].*$/, '')))
+      : null;
+
     // If the popup requested auto-scroll, do the full expand + scroll dance first,
     // then extract. The handler must return true to keep the message channel open
     // for the async response.
     if (message.autoScroll) {
       (async () => {
         await expandSeeMore();
-        await autoScroll();
-        sendResponse({ posts: extractPosts() });
+        await autoScroll(knownSet);
+        sendResponse({ posts: extractPosts(knownSet) });
       })();
       return true; // async — keep channel open
     }
@@ -366,7 +474,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // Default (no scroll): just expand "See more" in the current viewport, then extract.
     (async () => {
       await expandSeeMore();
-      sendResponse({ posts: extractPosts() });
+      sendResponse({ posts: extractPosts(knownSet) });
     })();
     return true; // async
   }
