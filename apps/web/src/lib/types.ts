@@ -8,6 +8,8 @@ export interface Event {
   venue_name: string | null;
   city_location: string | null;
   organizer_name: string | null;
+  organizer_email: string | null;
+  organizer_phone: string | null;
   short_description: string | null;
   source_search_term: string;
   collected_at: string;
@@ -16,6 +18,7 @@ export interface Event {
   notes: string | null;
   enriched_at: string | null;
   source: string;
+  google_form_url?: string | null;
 }
 
 export interface EventsQueryParams {

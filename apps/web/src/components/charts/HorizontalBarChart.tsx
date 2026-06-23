@@ -19,14 +19,14 @@ export function HorizontalBarChart({
 }) {
   if (data.length === 0) {
     return (
-      <div className="text-muted-foreground flex h-[300px] items-center justify-center text-xs">
+      <div className="text-muted-foreground flex h-[180px] items-center justify-center text-xs">
         No data
       </div>
     );
   }
 
   return (
-    <ChartContainer config={chartConfig} className="h-[300px] w-full">
+    <ChartContainer config={chartConfig} className="h-[180px] w-full">
       <BarChart
         accessibilityLayer
         data={data}

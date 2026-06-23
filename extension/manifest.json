@@ -10,7 +10,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://www.facebook.com/events/*",
+    "https://www.facebook.com/*",
     "https://x.com/*",
     "https://twitter.com/*"
   ],
@@ -25,6 +25,11 @@
     {
       "matches": ["https://www.facebook.com/events/*"],
       "js": ["content/content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.facebook.com/*"],
+      "js": ["content/content-posts.js"],
       "run_at": "document_idle"
     },
     {

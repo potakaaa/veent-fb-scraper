@@ -5,115 +5,88 @@ import {
   CheckmarkCircle01Icon,
   Analytics01Icon,
 } from "@hugeicons/core-free-icons";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card";
 import type { Event } from "@/lib/types";
+
+interface StatCellProps {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  accent?: string;
+  iconNode: React.ReactNode;
+}
+
+function StatCell({ label, value, sub, accent, iconNode }: StatCellProps) {
+  return (
+    <div
+      className="flex flex-col gap-0.5 px-4 py-2.5"
+      style={accent ? { borderTop: `2px solid ${accent}` } : undefined}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-widest">
+          {label}
+        </span>
+        {iconNode}
+      </div>
+      <span className="text-foreground text-xl font-bold tabular-nums leading-none">
+        {value}
+      </span>
+      {sub && (
+        <span className="text-muted-foreground text-[11px] leading-none">{sub}</span>
+      )}
+    </div>
+  );
+}
 
 export function StatsCards({ events }: { events: Event[] }) {
   const totalEvents = events.length;
   const facebookCount = events.filter((e) => e.source === "facebook").length;
   const xCount = events.filter((e) => e.source === "x.com").length;
   const enrichedCount = events.filter((e) => e.enriched_at !== null).length;
-  const highInterestCount = events.filter(
-    (e) => e.respondent_count > 100,
-  ).length;
-
-  const enrichedPct = totalEvents > 0 ? enrichedCount / totalEvents : 0;
+  const highInterestCount = events.filter((e) => e.respondent_count > 100).length;
+  const enrichedPct = totalEvents > 0 ? Math.round((enrichedCount / totalEvents) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {/* Total Events */}
-      <Card className="relative overflow-hidden border-l-4 border-l-[var(--chart-1)]">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <CardDescription>Total Events</CardDescription>
-            <HugeiconsIcon
-              icon={Calendar01Icon}
-              size={18}
-              className="text-muted-foreground mt-0.5 shrink-0"
-              strokeWidth={1.5}
-            />
-          </div>
-          <CardTitle className="text-2xl tabular-nums">
-            {totalEvents.toLocaleString()}
-          </CardTitle>
-        </CardHeader>
-      </Card>
-
-      {/* By Source */}
-      <Card className="relative overflow-hidden border-l-4 border-l-[var(--chart-2)]">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <CardDescription>By Source</CardDescription>
-            <HugeiconsIcon
-              icon={Analytics01Icon}
-              size={18}
-              className="text-muted-foreground mt-0.5 shrink-0"
-              strokeWidth={1.5}
-            />
-          </div>
-          <CardTitle className="text-2xl tabular-nums">
+    <div className="bg-card border-border grid grid-cols-4 divide-x divide-[var(--border)] overflow-hidden rounded-lg border">
+      <StatCell
+        label="Total Events"
+        value={totalEvents.toLocaleString()}
+        iconNode={<HugeiconsIcon icon={Calendar01Icon} size={12} className="text-muted-foreground" strokeWidth={1.5} />}
+        accent="var(--chart-1)"
+      />
+      <StatCell
+        label="By Source"
+        value={
+          <>
             {facebookCount.toLocaleString()}
-            <span className="text-muted-foreground text-sm font-normal">
-              {" "}
-              Facebook
+            <span className="text-muted-foreground ml-1 text-xs font-normal">FB</span>
+            <span className="mx-1.5 text-muted-foreground/40">/</span>
+            {xCount.toLocaleString()}
+            <span className="text-muted-foreground ml-1 text-xs font-normal">X</span>
+          </>
+        }
+        iconNode={<HugeiconsIcon icon={Analytics01Icon} size={12} className="text-muted-foreground" strokeWidth={1.5} />}
+        accent="var(--chart-2)"
+      />
+      <StatCell
+        label="Enriched"
+        value={enrichedCount.toLocaleString()}
+        sub={
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-muted">
+              <span className="block h-full rounded-full bg-primary" style={{ width: `${enrichedPct}%` }} />
             </span>
-          </CardTitle>
-          <CardDescription className="text-foreground">
-            {xCount.toLocaleString()} X.com
-          </CardDescription>
-        </CardHeader>
-      </Card>
-
-      {/* Enriched Events */}
-      <Card className="relative overflow-hidden border-l-4 border-l-[var(--chart-3)]">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <CardDescription>Enriched Events</CardDescription>
-            <HugeiconsIcon
-              icon={CheckmarkCircle01Icon}
-              size={18}
-              className="text-muted-foreground mt-0.5 shrink-0"
-              strokeWidth={1.5}
-            />
-          </div>
-          <CardTitle className="text-2xl tabular-nums">
-            {enrichedCount.toLocaleString()}
-          </CardTitle>
-          <CardDescription>
-            of {totalEvents.toLocaleString()} total
-          </CardDescription>
-          {/* Progress bar */}
-          <div className="bg-muted mt-2 h-1 w-full overflow-hidden rounded-full">
-            <div
-              className="h-full rounded-full bg-[var(--chart-1)] transition-all"
-              style={{ width: `${Math.round(enrichedPct * 100)}%` }}
-            />
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* High Interest */}
-      <Card className="relative overflow-hidden border-l-4 border-l-primary">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <CardDescription>High Interest (&gt;100)</CardDescription>
-            <HugeiconsIcon
-              icon={StarIcon}
-              size={18}
-              className="text-primary mt-0.5 shrink-0"
-              strokeWidth={1.5}
-            />
-          </div>
-          <CardTitle className="text-primary text-2xl tabular-nums">
-            {highInterestCount.toLocaleString()}
-          </CardTitle>
-        </CardHeader>
-      </Card>
+            {enrichedPct}% of {totalEvents.toLocaleString()}
+          </span>
+        }
+        iconNode={<HugeiconsIcon icon={CheckmarkCircle01Icon} size={12} className="text-muted-foreground" strokeWidth={1.5} />}
+        accent="var(--chart-3)"
+      />
+      <StatCell
+        label="High Interest >100"
+        value={<span className="text-primary">{highInterestCount.toLocaleString()}</span>}
+        iconNode={<HugeiconsIcon icon={StarIcon} size={12} className="text-primary" strokeWidth={1.5} />}
+        accent="var(--primary)"
+      />
     </div>
   );
 }

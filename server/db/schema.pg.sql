@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS events (
   venue_name           TEXT,
   city_location        TEXT,
   organizer_name       TEXT,
+  organizer_email      TEXT,
+  organizer_phone      TEXT,
   short_description    TEXT,
   source_search_term   TEXT NOT NULL,
   collected_at         TEXT NOT NULL,
@@ -15,8 +17,14 @@ CREATE TABLE IF NOT EXISTS events (
   respondent_count     INTEGER NOT NULL DEFAULT 0,
   notes                TEXT,
   enriched_at          TEXT,
-  source               TEXT NOT NULL DEFAULT 'facebook'
+  source               TEXT NOT NULL DEFAULT 'facebook',
+  google_form_url      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_collected_at ON events(collected_at);
 CREATE INDEX IF NOT EXISTS idx_source_term  ON events(source_search_term);
+
+-- Additive migrations for existing databases (safe to run repeatedly).
+ALTER TABLE events ADD COLUMN IF NOT EXISTS google_form_url   TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS organizer_email   TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS organizer_phone   TEXT;

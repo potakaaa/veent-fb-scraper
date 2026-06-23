@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: fb-events-server
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: OLLAMA_BASE
+        sync: false
+      - key: OLLAMA_MODEL
+        sync: false

@@ -12,17 +12,17 @@ const chartConfig = {
   count: { label: "Events", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
-function shortDate(value: string): string {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 export function EventsOverTime({ events }: { events: Event[] }) {
   const data = groupByDate(events);
 
+  function shortDate(value: string): string {
+    const d = new Date(`${value}-01`);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  }
+
   return (
-    <ChartContainer config={chartConfig} className="h-[300px] w-full">
+    <ChartContainer config={chartConfig} className="h-[160px] w-full">
       <BarChart accessibilityLayer data={data} margin={{ left: 4, right: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis

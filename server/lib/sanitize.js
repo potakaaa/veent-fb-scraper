@@ -10,6 +10,9 @@ class SanitizationError extends Error {
 const EVENT_URL_RE  = /facebook\.com\/events\/\d+/i;
 const PROFILE_URL_RE = /facebook\.com\/(?!events\/)/i;
 const X_URL_RE      = /x\.com\/(.*?)\/status\/\d+/i;
+// Facebook post permalinks: path-based (/posts/, /groups/{id}/posts/{id}, /permalink/)
+// or query-based (?post_id=...&...). Any facebook.com host is accepted for posts.
+const FB_POST_URL_RE = /^https?:\/\/(?:[\w-]+\.)*facebook\.com\//i;
 const EMAIL_RE      = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const PHONE_RE      = /(\+?\d[\d\s\-().]{7,}\d)/;
 const HTML_TAG_RE   = /<[^>]+>/g;
@@ -96,4 +99,42 @@ function sanitizeX(card) {
   };
 }
 
-module.exports = { sanitize, sanitizeX, SanitizationError };
+function sanitizeFBPost(card) {
+  if (!card || typeof card !== 'object') throw new SanitizationError('Invalid card object');
+
+  const postUrl = (card.post_url || '').trim();
+  if (!FB_POST_URL_RE.test(postUrl)) {
+    throw new SanitizationError(`Invalid Facebook post URL: "${postUrl}"`);
+  }
+
+  const rawCaption = (card.raw_caption || '').trim();
+  if (!rawCaption) throw new SanitizationError('Missing post caption');
+
+  const authorName = (card.author_name || '').trim();
+
+  // raw_caption: no PII rejection — phone numbers and emails in event post bodies
+  // are organizer contact info that the LLM should extract into organizer_email /
+  // organizer_phone. Full PII check applies to author_name only.
+  rejectPii('author_name', authorName);
+
+  // raw_links: keep only non-empty trimmed strings, dedup, cap to a sane size.
+  const rawLinks = Array.isArray(card.raw_links)
+    ? [...new Set(
+        card.raw_links
+          .map((l) => (typeof l === 'string' ? l.trim() : ''))
+          .filter(Boolean)
+      )].slice(0, 20)
+    : [];
+
+  const caption = stripHtml(rawCaption).substring(0, 1000);
+
+  return {
+    post_url:     postUrl,
+    raw_caption:  caption,
+    author_name:  authorName || null,
+    raw_links:    rawLinks,
+    collected_at: card.collected_at || new Date().toISOString(),
+  };
+}
+
+module.exports = { sanitize, sanitizeX, sanitizeFBPost, SanitizationError };

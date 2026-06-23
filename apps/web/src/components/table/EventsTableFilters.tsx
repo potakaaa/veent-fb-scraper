@@ -44,6 +44,7 @@ export function EventsTableFilters({
                 <SelectItem value={ALL}>All sources</SelectItem>
                 <SelectItem value="facebook">Facebook</SelectItem>
                 <SelectItem value="x.com">X.com</SelectItem>
+                <SelectItem value="facebook.posts">Facebook Posts</SelectItem>
               </SelectContent>
             </Select>
           </div>

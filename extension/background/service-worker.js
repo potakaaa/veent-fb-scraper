@@ -2,7 +2,9 @@
 
 const SERVER         = 'http://localhost:7842';
 const FB_EVENTS_RE   = /^https:\/\/www\.facebook\.com\/events\//;
+const FB_URL_RE      = /^https:\/\/(?:[\w-]+\.)*facebook\.com\//;
 const X_URL_RE       = /^https:\/\/x\.com\//;
+const POSTS_BATCH    = 50;   // FB posts POSTed per request to /events/posts
 const RENDER_DELAY   = 2500; // ms after tab "complete" for FB React to finish rendering
 const CONCURRENT     = 3;    // tabs open in parallel during enrichment
 
@@ -242,6 +244,87 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } catch (err) {
         sendResponse({ error: err.message });
       }
+    });
+    return true;
+  }
+
+  // ── CHECK_TAB_POSTS ─────────────────────────────────────────────────────────
+  if (message.action === 'CHECK_TAB_POSTS') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.url) { sendResponse({ valid: false, reason: 'No active tab.' }); return; }
+      FB_URL_RE.test(tab.url)
+        ? sendResponse({ valid: true, tabId: tab.id, url: tab.url })
+        : sendResponse({ valid: false, reason: 'Not on a Facebook page.' });
+    });
+    return true;
+  }
+
+  // ── RELAY_EXTRACT_POSTS ─────────────────────────────────────────────────────
+  // content-posts.js is auto-injected via the manifest, so we message it directly
+  // (chrome.tabs.sendMessage) — same pattern as RELAY_EXTRACT, NOT executeScript.
+  if (message.action === 'RELAY_EXTRACT_POSTS') {
+    const searchTerm = message.searchTerm || ''; // capture before any async boundary
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab || !FB_URL_RE.test(tab.url)) {
+        sendResponse({ started: false, error: 'Not on a Facebook page.' });
+        return;
+      }
+      chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_POSTS', autoScroll: true }, async (resp) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ started: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        if (resp?.error) {
+          sendResponse({ started: false, error: resp.error });
+          return;
+        }
+        const posts = resp?.posts || [];
+        if (!posts.length) {
+          sendResponse({ started: false, error: 'No posts found on this page.' });
+          return;
+        }
+
+        // Release the popup's message channel immediately, then process in background.
+        sendResponse({ started: true, total: posts.length });
+
+        let inserted = 0, duplicates = 0, skipped = 0, errors = 0;
+        let processed = 0;
+        for (let i = 0; i < posts.length; i += POSTS_BATCH) {
+          const batch = posts.slice(i, i + POSTS_BATCH).map((p) => ({ ...p, search_term: searchTerm }));
+
+          try {
+            const res = await fetch(`${SERVER}/events/posts`, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify(batch),
+            });
+            const r = await res.json().catch(() => ({}));
+            inserted   += r.inserted   ?? 0;
+            duplicates += r.duplicates ?? 0;
+            skipped    += r.skipped    ?? 0;
+            errors     += (r.errors || []).length;
+          } catch {
+            errors += batch.length;
+          }
+
+          processed += batch.length;
+          chrome.runtime.sendMessage({
+            action:  'POSTS_PROGRESS',
+            current: Math.min(processed, posts.length),
+            total:   posts.length,
+            done:    false,
+          }).catch(() => {});
+        }
+
+        chrome.runtime.sendMessage({
+          action: 'POSTS_PROGRESS',
+          done: true,
+          total: posts.length,
+          inserted, duplicates, skipped, errors,
+        }).catch(() => {});
+      });
     });
     return true;
   }

@@ -1,6 +1,6 @@
 import type { Event, EventsQueryParams, PatchEventBody } from "./types";
 
-const BASE = "http://localhost:7842";
+const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7842";
 
 export async function fetchEvents(params?: EventsQueryParams): Promise<Event[]> {
   const url = new URL(`${BASE}/events`);

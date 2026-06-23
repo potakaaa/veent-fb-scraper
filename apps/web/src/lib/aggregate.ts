@@ -3,7 +3,10 @@ import type { Event } from "./types";
 export function groupByDate(events: Event[]): { date: string; count: number }[] {
   const counts: Record<string, number> = {};
   for (const e of events) {
-    const date = e.collected_at ? e.collected_at.slice(0, 10) : "unknown";
+    if (!e.start_datetime) continue;
+    const d = new Date(e.start_datetime);
+    if (Number.isNaN(d.getTime())) continue;
+    const date = d.toISOString().slice(0, 7);
     counts[date] = (counts[date] ?? 0) + 1;
   }
   return Object.entries(counts)

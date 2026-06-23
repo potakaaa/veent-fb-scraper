@@ -29,10 +29,10 @@ export function SourceSplit({ events }: { events: Event[] }) {
   const total = data.reduce((sum, d) => sum + d.count, 0);
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-2">
       <ChartContainer
         config={chartConfig}
-        className="mx-auto aspect-square h-[260px]"
+        className="mx-auto aspect-square h-[140px]"
       >
         <PieChart>
           <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
@@ -40,8 +40,8 @@ export function SourceSplit({ events }: { events: Event[] }) {
             data={data}
             dataKey="count"
             nameKey="name"
-            innerRadius={60}
-            outerRadius={100}
+            innerRadius={36}
+            outerRadius={58}
             paddingAngle={2}
           >
             {data.map((entry, index) => (
@@ -63,16 +63,16 @@ export function SourceSplit({ events }: { events: Event[] }) {
                       <tspan
                         x={viewBox.cx}
                         y={viewBox.cy}
-                        className="fill-foreground text-2xl font-bold"
-                        fontSize={22}
+                        className="fill-foreground font-bold"
+                        fontSize={14}
                         fontWeight={700}
                       >
                         {total.toLocaleString()}
                       </tspan>
                       <tspan
                         x={viewBox.cx}
-                        y={(viewBox.cy ?? 0) + 20}
-                        fontSize={11}
+                        y={(viewBox.cy ?? 0) + 13}
+                        fontSize={9}
                         className="fill-muted-foreground"
                       >
                         total

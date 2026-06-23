@@ -19,27 +19,54 @@ function getMode() {
 
 // Keep the extract button label in sync with the active mode.
 function updateExtractLabel() {
-  extractBtn.textContent = getMode() === 'x' ? 'Collect X.com Tweets' : 'Extract Visible Events';
+  const mode = getMode();
+  if (mode === 'x')     { extractBtn.textContent = 'Collect X.com Tweets'; return; }
+  if (mode === 'posts') { extractBtn.textContent = 'Collect FB Posts';     return; }
+  extractBtn.textContent = 'Extract Visible Events';
 }
+
+const CHECK_ACTION = { x: 'CHECK_TAB_X', posts: 'CHECK_TAB_POSTS', facebook: 'CHECK_TAB' };
+const READY_STATUS = {
+  x:        'Ready — click Collect to gather visible tweets.',
+  posts:    'Ready — click Collect to gather visible posts.',
+  facebook: 'Ready — click Extract to collect visible events.',
+};
+const NAV_HINT = {
+  x:        'Navigate to an X.com page first.',
+  posts:    'Navigate to a Facebook page or group first.',
+  facebook: 'Navigate to a Facebook Events page first.',
+};
 
 function checkActiveTab() {
   const mode   = getMode();
-  const action = mode === 'x' ? 'CHECK_TAB_X' : 'CHECK_TAB';
+  const action = CHECK_ACTION[mode] || CHECK_ACTION.facebook;
+
+  // Fallback: if the service worker doesn't respond within 1 s (e.g. MV3 SW cold
+  // start or termination mid-scroll), enable the button anyway so the user isn't
+  // stuck. The relay handler has its own guard and will surface an error if needed.
+  let handled = false;
+  const fallback = setTimeout(() => {
+    if (!handled) {
+      extractBtn.disabled = false;
+      setStatus(READY_STATUS[mode] || READY_STATUS.facebook, '');
+    }
+  }, 1000);
+
   chrome.runtime.sendMessage({ action }, (resp) => {
+    handled = true;
+    clearTimeout(fallback);
+    if (chrome.runtime.lastError) {
+      // SW unavailable — enable optimistically.
+      extractBtn.disabled = false;
+      setStatus(READY_STATUS[mode] || READY_STATUS.facebook, '');
+      return;
+    }
     if (resp?.valid) {
       extractBtn.disabled = false;
-      setStatus(
-        mode === 'x'
-          ? 'Ready — click Collect to gather visible tweets.'
-          : 'Ready — click Extract to collect visible events.',
-        ''
-      );
+      setStatus(READY_STATUS[mode] || READY_STATUS.facebook, '');
     } else {
       extractBtn.disabled = true;
-      const fallback = mode === 'x'
-        ? 'Navigate to an X.com page first.'
-        : 'Navigate to a Facebook Events page first.';
-      setStatus(resp?.reason || fallback, 'error');
+      setStatus(resp?.reason || NAV_HINT[mode] || NAV_HINT.facebook, 'error');
     }
   });
 }
@@ -73,6 +100,20 @@ chrome.runtime.onMessage.addListener((msg) => {
       );
     }
   }
+
+  if (msg.action === 'POSTS_PROGRESS') {
+    if (msg.done) {
+      let summary = `Done! Saved ${msg.inserted} new`;
+      if (msg.duplicates > 0) summary += `, ${msg.duplicates} duplicate`;
+      if (msg.skipped    > 0) summary += `, ${msg.skipped} filtered`;
+      if (msg.errors     > 0) summary += `, ${msg.errors} error(s)`;
+      summary += '.';
+      setStatus(summary, 'success');
+      extractBtn.disabled = false;
+    } else {
+      setStatus(`Processing post ${msg.current}/${msg.total}…`, 'loading');
+    }
+  }
 });
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -92,6 +133,14 @@ document.querySelectorAll('input[name="mode"]').forEach((radio) => {
 });
 
 openSearchBtn.addEventListener('click', () => {
+  // Facebook Posts mode: no events search URL — open the generic feed so the user
+  // can navigate to the group/page they want to scrape.
+  if (getMode() === 'posts') {
+    chrome.tabs.create({ url: 'https://www.facebook.com/' });
+    setStatus('Opened Facebook. Navigate to a group or page, scroll, then collect.', '');
+    return;
+  }
+
   const term = searchInput.value.trim();
   if (!term) { setStatus('Enter a search term first.', 'error'); return; }
   chrome.storage.session.set({ lastSearchTerm: term });
@@ -121,6 +170,31 @@ extractBtn.addEventListener('click', async () => {
       }
       // Background is now processing — X_PROGRESS messages drive the status updates.
       setStatus(`Found ${resp.total} tweet(s). Processing 1/${resp.total}…`, 'loading');
+    });
+    return;
+  }
+
+  // ── Facebook Posts mode ──────────────────────────────────────────────────────
+  if (getMode() === 'posts') {
+    // search term is optional for posts; pass it through if provided so rows are tagged.
+    const searchTerm = searchInput.value.trim();
+
+    extractBtn.disabled = true;
+    setStatus('Scrolling & collecting posts… (this takes ~10–15 s)', 'loading');
+
+    chrome.runtime.sendMessage({ action: 'RELAY_EXTRACT_POSTS', searchTerm }, (resp) => {
+      if (chrome.runtime.lastError || resp?.error) {
+        setStatus(`Collection failed: ${resp?.error || chrome.runtime.lastError?.message}`, 'error');
+        extractBtn.disabled = false;
+        return;
+      }
+      if (!resp?.started) {
+        setStatus('No posts found. Scroll the feed/group, then collect again.', 'error');
+        extractBtn.disabled = false;
+        return;
+      }
+      // Background is now processing — POSTS_PROGRESS messages drive the status updates.
+      setStatus(`Found ${resp.total} post(s). Processing 1/${resp.total}…`, 'loading');
     });
     return;
   }

@@ -16,7 +16,7 @@ export function RespondentDistribution({ events }: { events: Event[] }) {
   const data = respondentBuckets(events);
 
   return (
-    <ChartContainer config={chartConfig} className="h-[300px] w-full">
+    <ChartContainer config={chartConfig} className="h-[150px] w-full">
       <BarChart accessibilityLayer data={data} margin={{ left: 4, right: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} />
