@@ -1,10 +1,9 @@
 [build]
   command = "pnpm --filter web build"
-  publish = "apps/web/.output/public"
+  publish = "apps/web/dist"
 
 [build.environment]
   NODE_VERSION = "20"
-  NITRO_PRESET = "static"
 
 [[redirects]]
   from = "/*"
