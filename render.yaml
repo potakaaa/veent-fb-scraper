@@ -2,6 +2,7 @@ services:
   - type: web
     name: fb-events-server
     runtime: node
+    nodeVersion: 20.19.2
     rootDir: server
     buildCommand: npm install
     startCommand: node server.js
