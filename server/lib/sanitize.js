@@ -137,4 +137,39 @@ function sanitizeFBPost(card) {
   };
 }
 
-module.exports = { sanitize, sanitizeX, sanitizeFBPost, SanitizationError };
+// Instagram post URL: /p/<shortcode>/, /reel/<shortcode>/, or /tv/<shortcode>/
+const IG_POST_URL_RE = /instagram\.com\/(p|reel|tv)\/[A-Za-z0-9_-]+/i;
+
+function sanitizeIGPost(card) {
+  if (!card || typeof card !== 'object') throw new SanitizationError('Invalid card object');
+
+  const postUrl = (card.post_url || '').trim();
+  if (!IG_POST_URL_RE.test(postUrl)) {
+    throw new SanitizationError(`Invalid Instagram post URL: "${postUrl}"`);
+  }
+
+  const authorHandle = (card.author_handle || '').trim();
+  rejectPii('author_handle', authorHandle);
+
+  const rawCaption = stripHtml((card.raw_caption || '').trim()).substring(0, 2200);
+
+  const hashtags = Array.isArray(card.hashtags)
+    ? [...new Set(
+        card.hashtags
+          .map(h => (typeof h === 'string' ? h.trim() : ''))
+          .filter(h => /^#[\w-￿]+$/.test(h))
+      )].slice(0, 30)
+    : [];
+
+  return {
+    post_url:       postUrl,
+    raw_caption:    rawCaption,
+    author_handle:  authorHandle || null,
+    hashtags,
+    media_type:     card.media_type || null,
+    post_timestamp: card.post_timestamp || null,
+    collected_at:   card.collected_at || new Date().toISOString(),
+  };
+}
+
+module.exports = { sanitize, sanitizeX, sanitizeFBPost, sanitizeIGPost, SanitizationError };

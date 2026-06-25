@@ -12,7 +12,9 @@
   "host_permissions": [
     "https://www.facebook.com/*",
     "https://x.com/*",
-    "https://twitter.com/*"
+    "https://twitter.com/*",
+    "https://www.instagram.com/*",
+    "https://instagram.com/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js"
@@ -35,6 +37,11 @@
     {
       "matches": ["https://x.com/*"],
       "js": ["content/content-x.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.instagram.com/*", "https://instagram.com/*"],
+      "js": ["content/content-instagram.js"],
       "run_at": "document_idle"
     }
   ]

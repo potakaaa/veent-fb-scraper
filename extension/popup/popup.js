@@ -20,21 +20,29 @@ function getMode() {
 // Keep the extract button label in sync with the active mode.
 function updateExtractLabel() {
   const mode = getMode();
-  if (mode === 'x')     { extractBtn.textContent = 'Collect X.com Tweets'; return; }
-  if (mode === 'posts') { extractBtn.textContent = 'Collect FB Posts';     return; }
+  if (mode === 'x')         { extractBtn.textContent = 'Collect X.com Tweets';    return; }
+  if (mode === 'posts')     { extractBtn.textContent = 'Collect FB Posts';        return; }
+  if (mode === 'instagram') { extractBtn.textContent = 'Collect Instagram Posts'; return; }
   extractBtn.textContent = 'Extract Visible Events';
 }
 
-const CHECK_ACTION = { x: 'CHECK_TAB_X', posts: 'CHECK_TAB_POSTS', facebook: 'CHECK_TAB' };
+const CHECK_ACTION = {
+  x:         'CHECK_TAB_X',
+  posts:     'CHECK_TAB_POSTS',
+  instagram: 'CHECK_TAB_INSTAGRAM',
+  facebook:  'CHECK_TAB',
+};
 const READY_STATUS = {
-  x:        'Ready — click Collect to gather visible tweets.',
-  posts:    'Ready — click Collect to gather visible posts.',
-  facebook: 'Ready — click Extract to collect visible events.',
+  x:         'Ready — click Collect to gather visible tweets.',
+  posts:     'Ready — click Collect to gather visible posts.',
+  instagram: 'Ready — click Collect to gather visible posts.',
+  facebook:  'Ready — click Extract to collect visible events.',
 };
 const NAV_HINT = {
-  x:        'Navigate to an X.com page first.',
-  posts:    'Navigate to a Facebook page or group first.',
-  facebook: 'Navigate to a Facebook Events page first.',
+  x:         'Navigate to an X.com page first.',
+  posts:     'Navigate to a Facebook page or group first.',
+  instagram: 'Navigate to an Instagram page first.',
+  facebook:  'Navigate to a Facebook Events page first.',
 };
 
 function checkActiveTab() {
@@ -114,6 +122,20 @@ chrome.runtime.onMessage.addListener((msg) => {
       setStatus(`Processing post ${msg.current}/${msg.total}…`, 'loading');
     }
   }
+
+  if (msg.action === 'INSTAGRAM_PROGRESS') {
+    if (msg.done) {
+      let summary = `Done! Saved ${msg.inserted} new`;
+      if (msg.duplicates > 0) summary += `, ${msg.duplicates} duplicate`;
+      if (msg.skipped    > 0) summary += `, ${msg.skipped} filtered`;
+      if (msg.errors     > 0) summary += `, ${msg.errors} error(s)`;
+      summary += '.';
+      setStatus(summary, 'success');
+      extractBtn.disabled = false;
+    } else {
+      setStatus(`Saving Instagram post ${msg.current}/${msg.total}…`, 'loading');
+    }
+  }
 });
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -133,11 +155,21 @@ document.querySelectorAll('input[name="mode"]').forEach((radio) => {
 });
 
 openSearchBtn.addEventListener('click', () => {
-  // Facebook Posts mode: no events search URL — open the generic feed so the user
-  // can navigate to the group/page they want to scrape.
+  // Facebook Posts mode: open generic feed so the user navigates to their target.
   if (getMode() === 'posts') {
     chrome.tabs.create({ url: 'https://www.facebook.com/' });
     setStatus('Opened Facebook. Navigate to a group or page, scroll, then collect.', '');
+    return;
+  }
+
+  // Instagram mode: open hashtag explore page (strip leading # if present).
+  if (getMode() === 'instagram') {
+    const raw  = searchInput.value.trim();
+    const term = raw.replace(/^#/, '');
+    if (!term) { setStatus('Enter a hashtag or keyword first.', 'error'); return; }
+    chrome.storage.session.set({ lastSearchTerm: raw });
+    chrome.tabs.create({ url: `https://www.instagram.com/explore/tags/${encodeURIComponent(term)}/` });
+    setStatus('Opened Instagram hashtag page. Scroll, then collect.', '');
     return;
   }
 
@@ -170,6 +202,30 @@ extractBtn.addEventListener('click', async () => {
       }
       // Background is now processing — X_PROGRESS messages drive the status updates.
       setStatus(`Found ${resp.total} tweet(s). Processing 1/${resp.total}…`, 'loading');
+    });
+    return;
+  }
+
+  // ── Instagram mode ──────────────────────────────────────────────────────────
+  if (getMode() === 'instagram') {
+    const searchTerm = searchInput.value.trim();
+
+    extractBtn.disabled = true;
+    setStatus('Scrolling & collecting posts… (this takes ~15–20 s)', 'loading');
+
+    chrome.runtime.sendMessage({ action: 'RELAY_EXTRACT_INSTAGRAM', searchTerm }, (resp) => {
+      if (chrome.runtime.lastError || resp?.error) {
+        setStatus(`Collection failed: ${resp?.error || chrome.runtime.lastError?.message}`, 'error');
+        extractBtn.disabled = false;
+        return;
+      }
+      if (!resp?.started) {
+        setStatus('No posts found. Scroll the Instagram page, then collect again.', 'error');
+        extractBtn.disabled = false;
+        return;
+      }
+      setStatus(`Found ${resp.total} post(s). Saving…`, 'loading');
+      // Further progress driven by INSTAGRAM_PROGRESS listener above.
     });
     return;
   }

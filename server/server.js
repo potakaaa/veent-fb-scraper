@@ -6,10 +6,11 @@ const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
 
-const eventsRouter      = require('./routes/events');
-const eventsXRouter     = require('./routes/events-x');
-const eventsPostsRouter = require('./routes/events-posts');
-const exportRouter      = require('./routes/export');
+const eventsRouter         = require('./routes/events');
+const eventsXRouter        = require('./routes/events-x');
+const eventsPostsRouter    = require('./routes/events-posts');
+const eventsInstagramRouter = require('./routes/events-instagram');
+const exportRouter         = require('./routes/export');
 
 const PORT = process.env.PORT ?? 7842;
 
@@ -37,6 +38,7 @@ app.use(express.json({ limit: '512kb' }));
 
 app.use('/events/posts', eventsPostsRouter);
 app.use('/events/x', eventsXRouter);
+app.use('/events/instagram', eventsInstagramRouter);
 app.use('/events', eventsRouter);
 app.use('/export', exportRouter);
 

@@ -4,7 +4,9 @@ const SERVER         = 'http://localhost:7842';
 const FB_EVENTS_RE   = /^https:\/\/www\.facebook\.com\/events\//;
 const FB_URL_RE      = /^https:\/\/(?:[\w-]+\.)*facebook\.com\//;
 const X_URL_RE       = /^https:\/\/x\.com\//;
+const IG_URL_RE      = /^https:\/\/(?:www\.)?instagram\.com\//;
 const POSTS_BATCH    = 50;   // FB posts POSTed per request to /events/posts
+const IG_BATCH       = 50;   // Instagram posts POSTed per request to /events/instagram
 const RENDER_DELAY   = 2500; // ms after tab "complete" for FB React to finish rendering
 const CONCURRENT     = 3;    // tabs open in parallel during enrichment
 
@@ -256,6 +258,87 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       FB_URL_RE.test(tab.url)
         ? sendResponse({ valid: true, tabId: tab.id, url: tab.url })
         : sendResponse({ valid: false, reason: 'Not on a Facebook page.' });
+    });
+    return true;
+  }
+
+  // ── CHECK_TAB_INSTAGRAM ─────────────────────────────────────────────────────
+  if (message.action === 'CHECK_TAB_INSTAGRAM') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.url) { sendResponse({ valid: false, reason: 'No active tab.' }); return; }
+      IG_URL_RE.test(tab.url)
+        ? sendResponse({ valid: true, tabId: tab.id, url: tab.url })
+        : sendResponse({ valid: false, reason: 'Not on an Instagram page.' });
+    });
+    return true;
+  }
+
+  // ── RELAY_EXTRACT_INSTAGRAM ─────────────────────────────────────────────────
+  // content-instagram.js is auto-injected by the manifest. We send it an
+  // EXTRACT_INSTAGRAM message with autoScroll:true, receive the post array,
+  // then batch-POST to /events/instagram while streaming progress back to popup.
+  if (message.action === 'RELAY_EXTRACT_INSTAGRAM') {
+    const searchTerm = message.searchTerm || '';
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab || !IG_URL_RE.test(tab.url)) {
+        sendResponse({ started: false, error: 'Not on an Instagram page.' });
+        return;
+      }
+      chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_INSTAGRAM', autoScroll: true }, async (resp) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ started: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        if (resp?.error) {
+          sendResponse({ started: false, error: resp.error });
+          return;
+        }
+        const posts = resp?.posts || [];
+        if (!posts.length) {
+          sendResponse({ started: false, error: 'No posts found on this page.' });
+          return;
+        }
+
+        sendResponse({ started: true, total: posts.length });
+
+        let inserted = 0, duplicates = 0, skipped = 0, errors = 0;
+        let processed = 0;
+        for (let i = 0; i < posts.length; i += IG_BATCH) {
+          const batch = posts.slice(i, i + IG_BATCH).map(p => ({ ...p, search_term: searchTerm }));
+
+          try {
+            const res = await fetch(`${SERVER}/events/instagram`, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify(batch),
+            });
+            const r = await res.json().catch(() => ({}));
+            inserted   += r.inserted   ?? 0;
+            duplicates += r.duplicates ?? 0;
+            skipped    += r.skipped    ?? 0;
+            errors     += (r.errors || []).length;
+          } catch {
+            errors += batch.length;
+          }
+
+          processed += batch.length;
+          chrome.runtime.sendMessage({
+            action:  'INSTAGRAM_PROGRESS',
+            current: Math.min(processed, posts.length),
+            total:   posts.length,
+            done:    false,
+          }).catch(() => {});
+        }
+
+        chrome.runtime.sendMessage({
+          action: 'INSTAGRAM_PROGRESS',
+          done: true,
+          total: posts.length,
+          inserted, duplicates, skipped, errors,
+        }).catch(() => {});
+      });
     });
     return true;
   }

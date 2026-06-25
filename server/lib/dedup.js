@@ -96,4 +96,20 @@ function normalizeFBPostUrl(url) {
   }
 }
 
-module.exports = { normalizeUrl, normalizeXUrl, normalizeFBPostUrl };
+// Normalize an Instagram post URL to `instagram.com/p/<shortcode>` or
+// `instagram.com/reel/<shortcode>` — strips protocol, www, query params, and
+// trailing slash so the same post always deduplicates regardless of how it arrived.
+function normalizeIGUrl(url) {
+  try {
+    const u = new URL(url);
+    if (!/instagram\.com$/i.test(u.hostname.replace(/^www\./i, ''))) return null;
+    const match = u.pathname.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/i);
+    if (!match) return null;
+    const type = match[1].toLowerCase() === 'reel' ? 'reel' : 'p';
+    return `instagram.com/${type}/${match[2]}`;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { normalizeUrl, normalizeXUrl, normalizeFBPostUrl, normalizeIGUrl };
